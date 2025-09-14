@@ -1,2 +1,2 @@
 # Blogger_writing_app
-A simple FastAPI learning project with user signup, login, roles, and blog posts (SQLite + SQLAlchemy).
+“Practice backend project using FastAPI and SQLite with user authentication, role-based access, and blog management.”
