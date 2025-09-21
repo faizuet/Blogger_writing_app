@@ -1,0 +1,27 @@
+# --------------------
+# Python
+# --------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# --------------------
+# Virtual Environments
+# --------------------
+venv/
+env/
+.venv/
+
+# --------------------
+# Environment & Secrets
+# --------------------
+.env
+
+# --------------------
+# Alembic Migrations Cache
+# --------------------
+alembic/__pycache__/
+alembic/versions/__pycache__/
