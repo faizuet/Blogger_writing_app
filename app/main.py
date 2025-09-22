@@ -11,3 +11,4 @@ app = FastAPI(
 # Include routers
 app.include_router(auth.router)
 app.include_router(blog.router)
+
