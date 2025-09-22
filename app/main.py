@@ -1,9 +1,13 @@
 from fastapi import FastAPI
-from app.Apis import auth, blog
+from app.api import auth, blog
 
-app = FastAPI(title="Blogger Writing App")
+# Create FastAPI app
+app = FastAPI(
+    title="Blog App",
+    description="A clean FastAPI blog application",
+    version="1.0.0",
+)
 
-# ---------- Routers ----------
+# Include routers
 app.include_router(auth.router)
 app.include_router(blog.router)
-

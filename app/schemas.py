@@ -2,8 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 
-# ----------- User Schemas -----------
-
+# -------- User Schemas --------
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -17,7 +16,7 @@ class UserLogin(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: int
+    id: str  # UUID
     username: str
     email: EmailStr
     role: str
@@ -26,18 +25,17 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-# ----------- Blog Schemas -----------
-
+# -------- Blog Schemas --------
 class BlogCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=200)
     content: str = Field(..., min_length=1)
 
 
 class BlogResponse(BaseModel):
-    id: int
+    id: str  # UUID
     title: str
     content: str
-    owner_id: int
+    owner_id: str  # UUID
 
     class Config:
         from_attributes = True

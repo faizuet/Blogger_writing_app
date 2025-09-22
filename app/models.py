@@ -1,12 +1,14 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text
+import uuid
+from sqlalchemy import Column, String, ForeignKey, Text
 from sqlalchemy.orm import relationship
-from app.database import Base
+from app.core.database import Base
 
 
+# -------- Models --------
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
@@ -18,10 +20,10 @@ class User(Base):
 class Blog(Base):
     __tablename__ = "blogs"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
     title = Column(String(200), index=True, nullable=False)
     content = Column(Text, nullable=False)
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     owner = relationship("User", back_populates="blogs")
 

@@ -23,5 +23,5 @@ env/
 # --------------------
 # Alembic Migrations Cache
 # --------------------
-alembic/__pycache__/
-alembic/versions/__pycache__/
+app/alembic/__pycache__/
+app/alembic/versions/__pycache__/

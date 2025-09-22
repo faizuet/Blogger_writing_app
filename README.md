@@ -54,7 +54,7 @@ Blogger_writing_app/
 1. **Clone the repo**
    ```bash
    git clone <your-repo-url>
-   cd Blogger_writing_app
+   cd blog_app
    ```
 
 2. **Create a virtual environment**
