@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api import auth, blog
+from app.api.main import api_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -8,7 +8,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Include routers
-app.include_router(auth.router)
-app.include_router(blog.router)
+# Include all API routers
+app.include_router(api_router)
 

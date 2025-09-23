@@ -1,10 +1,11 @@
 import uuid
-from sqlalchemy import Column, String, ForeignKey, Text
+from sqlalchemy import Column, String, ForeignKey, Text, Enum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.schemas import ReactionType
 
 
-# -------- Models --------
+# -------- User Model --------
 class User(Base):
     __tablename__ = "users"
 
@@ -15,8 +16,11 @@ class User(Base):
     role = Column(String(20), default="reader", nullable=False)
 
     blogs = relationship("Blog", back_populates="owner", cascade="all, delete-orphan")
+    comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
+    reactions = relationship("Reaction", back_populates="user", cascade="all, delete-orphan")
 
 
+# -------- Blog Model --------
 class Blog(Base):
     __tablename__ = "blogs"
 
@@ -26,4 +30,32 @@ class Blog(Base):
     owner_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     owner = relationship("User", back_populates="blogs")
+    comments = relationship("Comment", back_populates="blog", cascade="all, delete-orphan")
+    reactions = relationship("Reaction", back_populates="blog", cascade="all, delete-orphan")
+
+
+# -------- Comment Model --------
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
+    content = Column(Text, nullable=False)
+    blog_id = Column(String(36), ForeignKey("blogs.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    blog = relationship("Blog", back_populates="comments")
+    user = relationship("User", back_populates="comments")
+
+
+# -------- Reaction Model --------
+class Reaction(Base):
+    __tablename__ = "reactions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=False)
+    type = Column(Enum(ReactionType), nullable=False)
+    blog_id = Column(String(36), ForeignKey("blogs.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    blog = relationship("Blog", back_populates="reactions")
+    user = relationship("User", back_populates="reactions")
 

@@ -1,5 +1,9 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
+from enum import Enum
+
+if TYPE_CHECKING:
+    from __main__ import CommentResponse, ReactionResponse
 
 
 # -------- User Schemas --------
@@ -16,27 +20,81 @@ class UserLogin(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str  # UUID
+    id: str
     username: str
     email: EmailStr
     role: str
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # -------- Blog Schemas --------
-class BlogCreate(BaseModel):
+class BlogBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=200)
     content: str = Field(..., min_length=1)
 
 
-class BlogResponse(BaseModel):
-    id: str  # UUID
-    title: str
-    content: str
-    owner_id: str  # UUID
+class BlogCreate(BlogBase):
+    pass
 
-    class Config:
-        from_attributes = True
+
+class BlogUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=3, max_length=200)
+    content: Optional[str] = Field(None, min_length=1)
+
+
+class BlogResponse(BlogBase):
+    id: str
+    owner: UserResponse
+    comments: Optional[List["CommentResponse"]] = []
+    reactions: Optional[List["ReactionResponse"]] = []
+
+    model_config = {"from_attributes": True}
+
+
+# -------- Comment Schemas --------
+class CommentBase(BaseModel):
+    content: str = Field(..., min_length=1)
+
+
+class CommentCreate(CommentBase):
+    pass
+
+
+class CommentResponse(CommentBase):
+    id: str
+    user: UserResponse
+    blog_id: str
+
+    model_config = {"from_attributes": True}
+
+
+# -------- Reaction Enum & Schemas --------
+class ReactionType(str, Enum):
+    like = "like"
+    love = "love"
+    haha = "haha"
+    wow = "wow"
+    sad = "sad"
+    angry = "angry"
+
+
+class ReactionBase(BaseModel):
+    type: ReactionType
+
+
+class ReactionCreate(ReactionBase):
+    pass
+
+
+class ReactionResponse(ReactionBase):
+    id: str
+    user: UserResponse
+    blog_id: str
+
+    model_config = {"from_attributes": True}
+
+
+# Forward references for nested models
+BlogResponse.model_rebuild()
 
