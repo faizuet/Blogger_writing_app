@@ -11,12 +11,15 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 # ---------------- Helper functions ----------------
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
+
 
 # ---------------- Routes ----------------
 @router.post("/signup", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
@@ -38,7 +41,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     return new_user
 
 
-@router.post("/login")
+@router.post("/login", response_model=schemas.TokenResponse)
 def login(user: schemas.UserLogin, db: Session = Depends(database.get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
     if not db_user or not verify_password(user.password, db_user.hashed_password):
@@ -50,14 +53,5 @@ def login(user: schemas.UserLogin, db: Session = Depends(database.get_db)):
 
     token = security.create_access_token({"sub": db_user.username})
 
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": db_user.id,
-            "username": db_user.username,
-            "email": db_user.email,
-            "role": db_user.role,
-        }
-    }
+    return schemas.TokenResponse(access_token=token, token_type="bearer")
 
