@@ -10,8 +10,9 @@ A clean practice backend project built with **FastAPI** and **MySQL**, featuring
 * 📰 **Blog management** (CRUD for writers, read-only for readers)
 * 💬 **Comment system**: readers & writers can comment on blogs
 * ⚡ **Reactions**: readers & writers can react to blogs (`like`, `love`, `haha`, `wow`, `sad`, `angry`)
-* ⚡ **Alembic migrations** for database schema
-* 🗂️ Modular and professional project structure
+* 🗂️ **Modular project structure**
+* 🏗️ **Alembic migrations** for database schema
+* 🧪 **Postman-ready API collection** for full testing
 
 ---
 
@@ -111,8 +112,8 @@ my_blog_app/
 
 ### Auth
 
-* `POST /auth/signup` → Register new user
-* `POST /auth/login` → Login & get JWT
+* `POST /auth/signup` → Register new user (set role: `reader` or `writer`)
+* `POST /auth/login` → Login & get JWT token
 
 ### Blogs
 
@@ -126,7 +127,7 @@ my_blog_app/
 
 * `POST /blogs/{id}/comments` → Add comment to blog
 * `GET /blogs/{id}/comments` → Get all comments for a blog
-* `DELETE /blogs/{id}/comments/{comment_id}` → Delete comment (comment owner only)
+* `DELETE /blogs/{id}/comments/{comment_id}` → Delete comment (owner only)
 
 ### Reactions
 
@@ -139,16 +140,22 @@ my_blog_app/
 ## 🛠️ Notes
 
 * Database: **MySQL**
+
 * Use **Alembic** for schema changes:
 
   ```bash
   alembic revision --autogenerate -m "message"
   alembic upgrade head
   ```
+
 * Default roles:
 
   * **reader** (default)
   * **writer** (set during signup)
-* **Reactions** allowed: `like`, `love`, `haha`, `wow`, `sad`, `angry`
-* **Comments** do not have reactions; reactions only apply to blogs
+
+* **Reactions** allowed: `like 👍`, `love ❤️`, `haha 😂`, `wow 😲`, `sad 😢`, `angry 😡`
+
+* **Comments** cannot have reactions; reactions only apply to blogs
+
+* **Postman collection** available for testing the full API (signup/login, blogs, comments, reactions)
 

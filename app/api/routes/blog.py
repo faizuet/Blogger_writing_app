@@ -4,14 +4,23 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.schemas import (
-    BlogCreate, BlogResponse,
+    BlogCreate, BlogUpdate, BlogResponse,
     CommentCreate, CommentResponse,
-    ReactionCreate, ReactionResponse, ReactionType
+    ReactionCreate, ReactionResponse
 )
 from app.models import User, Blog, Comment, Reaction
 
 router = APIRouter(prefix="/blogs", tags=["Blogs"])
 
+# Allowed Unicode code points for reactions
+ALLOWED_REACTIONS = {
+    128077,  # 👍 like
+    10084,   # ❤️ love
+    128514,  # 😂 haha
+    128562,  # 😲 wow
+    128546,  # 😢 sad
+    128545   # 😡 angry
+}
 
 # -------- Blog Routes --------
 @router.post("/", response_model=BlogResponse, status_code=status.HTTP_201_CREATED)
@@ -52,7 +61,7 @@ def get_blog(blog_id: str, db: Session = Depends(get_db)):
 @router.put("/{blog_id}", response_model=BlogResponse)
 def update_blog(
     blog_id: str,
-    blog_data: BlogCreate,
+    blog_data: BlogUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -64,8 +73,11 @@ def update_blog(
     if blog.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this blog")
 
-    blog.title = blog_data.title
-    blog.content = blog_data.content
+    if blog_data.title is not None:
+        blog.title = blog_data.title
+    if blog_data.content is not None:
+        blog.content = blog_data.content
+
     db.commit()
     db.refresh(blog)
     return blog
@@ -149,21 +161,20 @@ def add_or_update_reaction(
     if not blog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
 
-    # Validate the reaction type
-    if reaction.type not in ReactionType.__members__.values():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reaction type")
+    if reaction.code not in ALLOWED_REACTIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reaction code")
 
     existing_reaction = (
         db.query(Reaction).filter(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id).first()
     )
 
     if existing_reaction:
-        existing_reaction.type = reaction.type
+        existing_reaction.code = reaction.code
         db.commit()
         db.refresh(existing_reaction)
         return existing_reaction
     else:
-        new_reaction = Reaction(type=reaction.type, blog_id=blog.id, user_id=current_user.id)
+        new_reaction = Reaction(code=reaction.code, blog_id=blog.id, user_id=current_user.id)
         db.add(new_reaction)
         db.commit()
         db.refresh(new_reaction)
