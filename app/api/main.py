@@ -1,10 +1,10 @@
 from fastapi import APIRouter
-from app.api.routes import auth, blog
+from app.api.routes import auth, blogs_v1, blogs_v2
 
-# Group all API routes
 api_router = APIRouter()
 
-#include routers
 api_router.include_router(auth.router)
-api_router.include_router(blog.router)
+
+api_router.include_router(blogs_v1.router)
+api_router.include_router(blogs_v2.router)
 

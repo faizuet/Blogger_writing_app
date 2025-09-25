@@ -10,17 +10,11 @@ from app.schemas import (
 )
 from app.models import User, Blog, Comment, Reaction
 
-router = APIRouter(prefix="/blogs", tags=["Blogs"])
+# Versioned router
+router = APIRouter(prefix="/v1/blogs", tags=["Blogs V1"])
 
-# Allowed Unicode code points for reactions
-ALLOWED_REACTIONS = {
-    128077,  # 👍 like
-    10084,   # ❤️ love
-    128514,  # 😂 haha
-    128562,  # 😲 wow
-    128546,  # 😢 sad
-    128545   # 😡 angry
-}
+ALLOWED_REACTIONS = {128077, 10084, 128514, 128562, 128546, 128545}
+
 
 # -------- Blog Routes --------
 @router.post("/", response_model=BlogResponse, status_code=status.HTTP_201_CREATED)
@@ -29,7 +23,7 @@ def create_blog(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a blog (writers only)."""
+    """ Create a blog (writers only, login required)."""
     if current_user.role != "writer":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -40,21 +34,33 @@ def create_blog(
     db.add(new_blog)
     db.commit()
     db.refresh(new_blog)
+
+    # Include empty comments & reactions
+    new_blog.comments = []
+    new_blog.reactions = []
+
     return new_blog
 
 
 @router.get("/", response_model=list[BlogResponse])
 def get_blogs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Get all blogs with optional pagination."""
-    return db.query(Blog).offset(skip).limit(limit).all()
+    """ Public: Get all blogs with comments and reactions."""
+    blogs = db.query(Blog).offset(skip).limit(limit).all()
+    for blog in blogs:
+        blog.comments = db.query(Comment).filter(Comment.blog_id == blog.id).all()
+        blog.reactions = db.query(Reaction).filter(Reaction.blog_id == blog.id).all()
+    return blogs
 
 
 @router.get("/{blog_id}", response_model=BlogResponse)
 def get_blog(blog_id: str, db: Session = Depends(get_db)):
-    """Get a blog by ID."""
+    """ Public: Get a single blog by ID with comments and reactions."""
     blog = db.query(Blog).filter(Blog.id == blog_id).first()
     if not blog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+
+    blog.comments = db.query(Comment).filter(Comment.blog_id == blog.id).all()
+    blog.reactions = db.query(Reaction).filter(Reaction.blog_id == blog.id).all()
     return blog
 
 
@@ -65,7 +71,7 @@ def update_blog(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update a blog (only owner can update)."""
+    """ Update a blog (only owner, login required)."""
     blog = db.query(Blog).filter(Blog.id == blog_id).first()
     if not blog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
@@ -80,6 +86,10 @@ def update_blog(
 
     db.commit()
     db.refresh(blog)
+
+    # Attach comments & reactions
+    blog.comments = db.query(Comment).filter(Comment.blog_id == blog.id).all()
+    blog.reactions = db.query(Reaction).filter(Reaction.blog_id == blog.id).all()
     return blog
 
 
@@ -89,7 +99,7 @@ def delete_blog(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a blog (only owner can delete)."""
+    """ Delete a blog (only owner, login required)."""
     blog = db.query(Blog).filter(Blog.id == blog_id).first()
     if not blog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
@@ -103,14 +113,14 @@ def delete_blog(
 
 
 # -------- Comment Routes --------
-@router.post("/{blog_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/comments/{blog_id}", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
 def add_comment(
     blog_id: str,
     comment: CommentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add a comment to a blog (readers & writers)."""
+    """ Add a comment (readers & writers, login required)."""
     blog = db.query(Blog).filter(Blog.id == blog_id).first()
     if not blog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
@@ -122,20 +132,20 @@ def add_comment(
     return new_comment
 
 
-@router.get("/{blog_id}/comments", response_model=list[CommentResponse])
+@router.get("/comments/{blog_id}", response_model=list[CommentResponse])
 def get_comments(blog_id: str, db: Session = Depends(get_db)):
-    """Get all comments for a blog."""
+    """🌍 Public: Get all comments for a blog (no login required)."""
     return db.query(Comment).filter(Comment.blog_id == blog_id).all()
 
 
-@router.delete("/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/comments/{blog_id}/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comment(
     blog_id: str,
     comment_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a comment (only the comment owner can delete)."""
+    """ Delete a comment (only the comment owner, login required)."""
     comment = db.query(Comment).filter(Comment.id == comment_id, Comment.blog_id == blog_id).first()
     if not comment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
@@ -149,14 +159,14 @@ def delete_comment(
 
 
 # -------- Reaction Routes --------
-@router.post("/{blog_id}/reactions", response_model=ReactionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/reactions/{blog_id}", response_model=ReactionResponse, status_code=status.HTTP_201_CREATED)
 def add_or_update_reaction(
     blog_id: str,
     reaction: ReactionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add or update a reaction on a blog (readers & writers)."""
+    """ Add or update a reaction (readers & writers, login required)."""
     blog = db.query(Blog).filter(Blog.id == blog_id).first()
     if not blog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
@@ -164,36 +174,33 @@ def add_or_update_reaction(
     if reaction.code not in ALLOWED_REACTIONS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reaction code")
 
-    existing_reaction = (
-        db.query(Reaction).filter(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id).first()
-    )
-
+    existing_reaction = db.query(Reaction).filter(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id).first()
     if existing_reaction:
         existing_reaction.code = reaction.code
         db.commit()
         db.refresh(existing_reaction)
         return existing_reaction
-    else:
-        new_reaction = Reaction(code=reaction.code, blog_id=blog.id, user_id=current_user.id)
-        db.add(new_reaction)
-        db.commit()
-        db.refresh(new_reaction)
-        return new_reaction
+
+    new_reaction = Reaction(code=reaction.code, blog_id=blog.id, user_id=current_user.id)
+    db.add(new_reaction)
+    db.commit()
+    db.refresh(new_reaction)
+    return new_reaction
 
 
-@router.get("/{blog_id}/reactions", response_model=list[ReactionResponse])
+@router.get("/reactions/{blog_id}", response_model=list[ReactionResponse])
 def get_reactions(blog_id: str, db: Session = Depends(get_db)):
-    """Get all reactions for a blog."""
+    """ Public: Get all reactions for a blog (no login required)."""
     return db.query(Reaction).filter(Reaction.blog_id == blog_id).all()
 
 
-@router.delete("/{blog_id}/reactions", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/reactions/{blog_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_reaction(
     blog_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove a user's reaction from a blog."""
+    """ Remove your reaction (only your own, login required)."""
     reaction = db.query(Reaction).filter(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id).first()
     if not reaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reaction not found")
