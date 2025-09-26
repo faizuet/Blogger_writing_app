@@ -8,7 +8,6 @@ from app.models import User
 
 # Router setup
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 

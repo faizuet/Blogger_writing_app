@@ -1,16 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, computed_field
-from typing import Optional, List, TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from __main__ import CommentResponse, ReactionResponse
-
-
-# -------- Auth Schemas --------
-class TokenResponse(BaseModel):
-    access_token: str = Field(..., description="JWT access token")
-    token_type: str = Field(default="bearer", description="Token type (usually 'bearer')")
-
-    model_config = {"extra": "forbid"}
+from typing import Optional, List, Literal
 
 
 class UserCreate(BaseModel):
@@ -29,6 +18,14 @@ class UserLogin(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+    model_config = {"extra": "forbid"}
+
+
 class UserResponse(BaseModel):
     id: str
     username: str
@@ -41,7 +38,6 @@ class UserResponse(BaseModel):
     }
 
 
-# -------- Blog Schemas --------
 class BlogBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=200)
     content: str = Field(..., min_length=1)
@@ -72,10 +68,23 @@ class BlogResponse(BlogBase):
     }
 
 
-# -------- Comment Schemas --------
+class BlogResponseV2(BlogBase):
+    id: str
+    owner: UserResponse
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    comments_count: int = 0
+    reactions_summary: dict[int, int] = {}
+    current_user_reaction: Optional[int] = None
+
+    model_config = {
+        "from_attributes": True,
+        "extra": "forbid"
+    }
+
+
 class CommentBase(BaseModel):
     content: str = Field(..., min_length=1)
-
     model_config = {"extra": "forbid"}
 
 
@@ -94,17 +103,24 @@ class CommentResponse(CommentBase):
     }
 
 
-# -------- Reaction Schemas --------
-AllowedReactions = Literal[128077, 10084, 128514, 128558, 128546, 128545]
-# 👍, ❤️, 😂, 😮, 😢, 😡
+class CommentResponseV2(CommentBase):
+    id: str
+    owner: UserResponse
+    blog_id: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+    model_config = {
+        "from_attributes": True,
+        "extra": "forbid"
+    }
+
+
+AllowedReactions = Literal[128077, 10084, 128514, 128562, 128546, 128545]
 
 
 class ReactionBase(BaseModel):
-    code: AllowedReactions = Field(
-        ...,
-        description="Unicode code point of allowed emoji reaction"
-    )
-
+    code: AllowedReactions = Field(..., description="Allowed emoji code point")
     model_config = {"extra": "forbid"}
 
 
@@ -125,10 +141,30 @@ class ReactionResponse(ReactionBase):
     @computed_field
     @property
     def emoji(self) -> str:
-        """Return the actual emoji character from its Unicode code point."""
         return chr(self.code)
 
 
-# Forward references for nested models
+class ReactionResponseV2(ReactionBase):
+    id: str
+    user: UserResponse
+    blog_id: str
+
+    model_config = {
+        "from_attributes": True,
+        "extra": "forbid"
+    }
+
+    @computed_field
+    @property
+    def emoji(self) -> str:
+        return chr(self.code)
+
+
 BlogResponse.model_rebuild()
+BlogResponseV2.model_rebuild()
+CommentResponse.model_rebuild()
+CommentResponseV2.model_rebuild()
+ReactionResponse.model_rebuild()
+ReactionResponseV2.model_rebuild()
+
 

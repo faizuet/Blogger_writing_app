@@ -7,7 +7,10 @@ A clean practice backend project built with **FastAPI** and **MySQL**, featuring
 
   * **Writer** → can create, read, update, delete blogs
   * **Reader** → can only read blogs
-* 📰 **Blog management** (CRUD for writers, read-only for readers)
+* 📰 **Blog management**:
+
+  * V1: CRUD for writers, read-only for readers
+  * V2: CRUD with timestamps, comment count, reaction summary, and current user reaction
 * 💬 **Comment system**: readers & writers can comment on blogs
 * ⚡ **Reactions**: readers & writers can react to blogs (`like`, `love`, `haha`, `wow`, `sad`, `angry`)
 * 🗂️ **Modular project structure**
@@ -40,7 +43,8 @@ my_blog_app/
     │   │
     │   ├── api/               # API routes
     │   │   ├── auth.py        # Authentication (signup/login)
-    │   │   └── blog.py        # Blog, comment & reaction routes
+    │   │   ├── v1_blog.py     # Blog, comment & reaction routes for V1
+    │   │   └── v2_blog.py     # Blog, comment & reaction routes for V2 with timestamps
     │   │
     │   ├── core/              # Core utilities
     │   │   ├── database.py    # DB session/engine
@@ -112,28 +116,35 @@ my_blog_app/
 
 ### Auth
 
-* `POST /auth/signup` → Register new user (set role: `reader` or `writer`)
+* `POST /auth/signup` → Register new user (role: `reader` or `writer`)
 * `POST /auth/login` → Login & get JWT token
 
-### Blogs
+### Blogs V1
 
-* `POST /blogs/` → Create blog (writers only)
-* `GET /blogs/` → Get all blogs
-* `GET /blogs/{id}` → Get blog by ID
-* `PUT /blogs/{id}` → Update blog (owner only)
-* `DELETE /blogs/{id}` → Delete blog (owner only)
+* `POST /v1/blogs/` → Create blog (writers only)
+* `GET /v1/blogs/` → Get all blogs
+* `GET /v1/blogs/{id}` → Get blog by ID
+* `PUT /v1/blogs/{id}` → Update blog (owner only)
+* `DELETE /v1/blogs/{id}` → Delete blog (owner only)
 
-### Comments
+### Blogs V2
 
-* `POST /blogs/{id}/comments` → Add comment to blog
-* `GET /blogs/{id}/comments` → Get all comments for a blog
-* `DELETE /blogs/{id}/comments/{comment_id}` → Delete comment (owner only)
+* `POST /v2/blogs/` → Create blog (writers only)
+* `GET /v2/blogs/` → Get all blogs with timestamps, comment count, reaction summary
+* `GET /v2/blogs/{id}` → Get blog by ID with extra metadata
+* `DELETE /v2/blogs/{id}` → Delete blog (owner only)
 
-### Reactions
+### Comments V1 & V2
 
-* `POST /blogs/{id}/reactions` → Add or update reaction on blog
-* `GET /blogs/{id}/reactions` → Get all reactions for a blog
-* `DELETE /blogs/{id}/reactions` → Remove your reaction from a blog
+* `POST /v{1|2}/blogs/{id}/comments` → Add comment
+* `GET /v{1|2}/blogs/{id}/comments` → Get all comments
+* `DELETE /v{1|2}/blogs/{id}/comments/{comment_id}` → Delete comment (owner only)
+
+### Reactions V1 & V2
+
+* `POST /v{1|2}/blogs/{id}/reactions` → Add or update reaction
+* `GET /v{1|2}/blogs/{id}/reactions` → Get all reactions
+* `DELETE /v{1|2}/blogs/{id}/reactions` → Remove your reaction
 
 ---
 
@@ -155,7 +166,5 @@ my_blog_app/
 
 * **Reactions** allowed: `like 👍`, `love ❤️`, `haha 😂`, `wow 😲`, `sad 😢`, `angry 😡`
 
-* **Comments** cannot have reactions; reactions only apply to blogs
-
-* **Postman collection** available for testing the full API (signup/login, blogs, comments, reactions)
+* **V2 Enhancements**: timestamps (`created_at`, `updated_at`), comment counts, reaction summaries, current user reaction
 

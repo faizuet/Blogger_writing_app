@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import Column, String, ForeignKey, Text, Integer
+from datetime import datetime
+from sqlalchemy import Column, String, ForeignKey, Text, Integer, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -42,6 +43,11 @@ class Blog(Base):
     content = Column(Text, nullable=False)
     owner_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
+    # v2 fields
+    deleted = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     owner = relationship("User", back_populates="blogs")
     comments = relationship("Comment", back_populates="blog", cascade="all, delete-orphan")
     reactions = relationship("Reaction", back_populates="blog", cascade="all, delete-orphan")
@@ -63,6 +69,11 @@ class Comment(Base):
     blog_id = Column(String(36), ForeignKey("blogs.id"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
+    # v2 fields
+    deleted = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     blog = relationship("Blog", back_populates="comments")
     user = relationship("User", back_populates="comments")
 
@@ -82,6 +93,10 @@ class Reaction(Base):
     code = Column(Integer, nullable=False)
     blog_id = Column(String(36), ForeignKey("blogs.id"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    # v2 fields
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     blog = relationship("Blog", back_populates="reactions")
     user = relationship("User", back_populates="reactions")
