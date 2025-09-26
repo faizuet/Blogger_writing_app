@@ -1,211 +1,289 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
-from app.core.database import get_db
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import or_
+from app.core.database import get_async_db
 from app.core.security import get_current_user
 from app.schemas import (
     BlogCreate, BlogUpdate, BlogResponse,
     CommentCreate, CommentResponse,
-    ReactionCreate, ReactionResponse
+    ReactionCreate, ReactionResponse,
 )
 from app.models import User, Blog, Comment, Reaction
 
-# Versioned router
+# ---------------- Router Setup ----------------
 router = APIRouter(prefix="/v1/blogs", tags=["Blogs V1"])
 
+# Allowed emoji codes 👍 ❤️ 😂 😲 😢 😡
 ALLOWED_REACTIONS = {128077, 10084, 128514, 128562, 128546, 128545}
 
 
-# -------- Blog Routes --------
+# ---------------- Blog Routes ----------------
 @router.post("/", response_model=BlogResponse, status_code=status.HTTP_201_CREATED)
-def create_blog(
+async def create_blog(
     blog: BlogCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Create a blog (writers only, login required)."""
+    """Create a blog (writers only)."""
     if current_user.role != "writer":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only writers can create blogs",
-        )
+        raise HTTPException(status_code=403, detail="Only writers can create blogs")
 
     new_blog = Blog(title=blog.title, content=blog.content, owner_id=current_user.id)
     db.add(new_blog)
-    db.commit()
-    db.refresh(new_blog)
+    await db.commit()
+    await db.refresh(new_blog)
 
-    # Include empty comments & reactions
-    new_blog.comments = []
-    new_blog.reactions = []
-
+    new_blog.comments, new_blog.reactions = [], []
     return new_blog
 
 
 @router.get("/", response_model=list[BlogResponse])
-def get_blogs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """ Public: Get all blogs with comments and reactions."""
-    blogs = db.query(Blog).offset(skip).limit(limit).all()
+async def list_blogs(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User | None = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, le=100),
+    search: str | None = None,
+    author: str | None = None,
+):
+    """Public: Get blogs with pagination, search & filter."""
+    query = select(Blog)
+
+    if not current_user or current_user.role != "admin":
+        query = query.where(Blog.deleted == False)
+
+    if search:
+        query = query.where(
+            or_(
+                Blog.title.ilike(f"%{search}%"),
+                Blog.content.ilike(f"%{search}%")
+            )
+        )
+    if author:
+        query = query.join(User).where(User.username == author)
+
+    result = await db.execute(query.offset(skip).limit(limit))
+    blogs = result.scalars().all()
+
     for blog in blogs:
-        blog.comments = db.query(Comment).filter(Comment.blog_id == blog.id).all()
-        blog.reactions = db.query(Reaction).filter(Reaction.blog_id == blog.id).all()
+        comments_result = await db.execute(
+            select(Comment).where(
+                Comment.blog_id == blog.id,
+                (Comment.deleted == False) | (current_user and current_user.role == "admin")
+            )
+        )
+        blog.comments = comments_result.scalars().all()
+
+        reactions_result = await db.execute(
+            select(Reaction).where(Reaction.blog_id == blog.id)
+        )
+        blog.reactions = reactions_result.scalars().all()
+
     return blogs
 
 
 @router.get("/{blog_id}", response_model=BlogResponse)
-def get_blog(blog_id: str, db: Session = Depends(get_db)):
-    """ Public: Get a single blog by ID with comments and reactions."""
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
-    if not blog:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+async def get_blog(
+    blog_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User | None = Depends(get_current_user),
+):
+    """Public: Get a single blog by ID with comments & reactions."""
+    query = select(Blog).where(Blog.id == blog_id)
+    if not current_user or current_user.role != "admin":
+        query = query.where(Blog.deleted == False)
 
-    blog.comments = db.query(Comment).filter(Comment.blog_id == blog.id).all()
-    blog.reactions = db.query(Reaction).filter(Reaction.blog_id == blog.id).all()
+    result = await db.execute(query)
+    blog = result.scalar_one_or_none()
+    if not blog:
+        raise HTTPException(status_code=404, detail="Blog not found")
+
+    comments_result = await db.execute(
+        select(Comment).where(
+            Comment.blog_id == blog.id,
+            (Comment.deleted == False) | (current_user and current_user.role == "admin")
+        )
+    )
+    blog.comments = comments_result.scalars().all()
+
+    reactions_result = await db.execute(
+        select(Reaction).where(Reaction.blog_id == blog.id)
+    )
+    blog.reactions = reactions_result.scalars().all()
+
     return blog
 
 
 @router.put("/{blog_id}", response_model=BlogResponse)
-def update_blog(
+async def update_blog(
     blog_id: str,
     blog_data: BlogUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Update a blog (only owner, login required)."""
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
-    if not blog:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+    """Update a blog (only owner or admin)."""
+    result = await db.execute(select(Blog).where(Blog.id == blog_id))
+    blog = result.scalar_one_or_none()
 
-    if blog.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this blog")
+    if not blog or blog.deleted:
+        raise HTTPException(status_code=404, detail="Blog not found")
+    if blog.owner_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     if blog_data.title is not None:
         blog.title = blog_data.title
     if blog_data.content is not None:
         blog.content = blog_data.content
 
-    db.commit()
-    db.refresh(blog)
+    await db.commit()
+    await db.refresh(blog)
 
-    # Attach comments & reactions
-    blog.comments = db.query(Comment).filter(Comment.blog_id == blog.id).all()
-    blog.reactions = db.query(Reaction).filter(Reaction.blog_id == blog.id).all()
+    comments_result = await db.execute(select(Comment).where(Comment.blog_id == blog.id))
+    blog.comments = comments_result.scalars().all()
+
+    reactions_result = await db.execute(select(Reaction).where(Reaction.blog_id == blog.id))
+    blog.reactions = reactions_result.scalars().all()
+
     return blog
 
 
 @router.delete("/{blog_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_blog(
+async def delete_blog(
     blog_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Delete a blog (only owner, login required)."""
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
+    """Soft delete a blog (only owner or admin)."""
+    result = await db.execute(select(Blog).where(Blog.id == blog_id))
+    blog = result.scalar_one_or_none()
+
     if not blog:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+        raise HTTPException(status_code=404, detail="Blog not found")
+    if blog.owner_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
 
-    if blog.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this blog")
-
-    db.delete(blog)
-    db.commit()
+    blog.deleted = True
+    await db.commit()
     return None
 
 
-# -------- Comment Routes --------
-@router.post("/comments/{blog_id}", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
-def add_comment(
+# ---------------- Comment Routes ----------------
+@router.post("/{blog_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
+async def add_comment(
     blog_id: str,
     comment: CommentCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Add a comment (readers & writers, login required)."""
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
+    """Add a comment (any logged-in user)."""
+    result = await db.execute(select(Blog).where(Blog.id == blog_id, Blog.deleted == False))
+    blog = result.scalar_one_or_none()
     if not blog:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+        raise HTTPException(status_code=404, detail="Blog not found")
 
     new_comment = Comment(content=comment.content, blog_id=blog.id, user_id=current_user.id)
     db.add(new_comment)
-    db.commit()
-    db.refresh(new_comment)
+    await db.commit()
+    await db.refresh(new_comment)
     return new_comment
 
 
-@router.get("/comments/{blog_id}", response_model=list[CommentResponse])
-def get_comments(blog_id: str, db: Session = Depends(get_db)):
-    """🌍 Public: Get all comments for a blog (no login required)."""
-    return db.query(Comment).filter(Comment.blog_id == blog_id).all()
+@router.get("/{blog_id}/comments", response_model=list[CommentResponse])
+async def get_comments(
+    blog_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User | None = Depends(get_current_user),
+):
+    """Public: Get all comments for a blog."""
+    query = select(Comment).where(Comment.blog_id == blog_id)
+    if not current_user or current_user.role != "admin":
+        query = query.where(Comment.deleted == False)
+
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
-@router.delete("/comments/{blog_id}/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_comment(
+@router.delete("/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_comment(
     blog_id: str,
     comment_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Delete a comment (only the comment owner, login required)."""
-    comment = db.query(Comment).filter(Comment.id == comment_id, Comment.blog_id == blog_id).first()
+    """Soft delete a comment (owner or admin)."""
+    result = await db.execute(
+        select(Comment).where(Comment.id == comment_id, Comment.blog_id == blog_id)
+    )
+    comment = result.scalar_one_or_none()
+
     if not comment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
 
-    if comment.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this comment")
-
-    db.delete(comment)
-    db.commit()
+    comment.deleted = True
+    await db.commit()
     return None
 
 
-# -------- Reaction Routes --------
-@router.post("/reactions/{blog_id}", response_model=ReactionResponse, status_code=status.HTTP_201_CREATED)
-def add_or_update_reaction(
+# ---------------- Reaction Routes ----------------
+@router.post("/{blog_id}/reactions", response_model=ReactionResponse, status_code=status.HTTP_201_CREATED)
+async def add_or_update_reaction(
     blog_id: str,
     reaction: ReactionCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Add or update a reaction (readers & writers, login required)."""
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
+    """Add or update a reaction (any logged-in user)."""
+    result = await db.execute(select(Blog).where(Blog.id == blog_id, Blog.deleted == False))
+    blog = result.scalar_one_or_none()
     if not blog:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+        raise HTTPException(status_code=404, detail="Blog not found")
 
     if reaction.code not in ALLOWED_REACTIONS:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reaction code")
+        raise HTTPException(status_code=400, detail="Invalid reaction code")
 
-    existing_reaction = db.query(Reaction).filter(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id).first()
+    result = await db.execute(
+        select(Reaction).where(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id)
+    )
+    existing_reaction = result.scalar_one_or_none()
+
     if existing_reaction:
         existing_reaction.code = reaction.code
-        db.commit()
-        db.refresh(existing_reaction)
+        await db.commit()
+        await db.refresh(existing_reaction)
         return existing_reaction
 
     new_reaction = Reaction(code=reaction.code, blog_id=blog.id, user_id=current_user.id)
     db.add(new_reaction)
-    db.commit()
-    db.refresh(new_reaction)
+    await db.commit()
+    await db.refresh(new_reaction)
     return new_reaction
 
 
-@router.get("/reactions/{blog_id}", response_model=list[ReactionResponse])
-def get_reactions(blog_id: str, db: Session = Depends(get_db)):
-    """ Public: Get all reactions for a blog (no login required)."""
-    return db.query(Reaction).filter(Reaction.blog_id == blog_id).all()
+@router.get("/{blog_id}/reactions", response_model=list[ReactionResponse])
+async def get_reactions(blog_id: str, db: AsyncSession = Depends(get_async_db)):
+    """Public: Get all reactions for a blog."""
+    result = await db.execute(select(Reaction).where(Reaction.blog_id == blog_id))
+    return result.scalars().all()
 
 
-@router.delete("/reactions/{blog_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_reaction(
+@router.delete("/{blog_id}/reactions", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_reaction(
     blog_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ Remove your reaction (only your own, login required)."""
-    reaction = db.query(Reaction).filter(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id).first()
+    """Remove your reaction (only your own)."""
+    result = await db.execute(
+        select(Reaction).where(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id)
+    )
+    reaction = result.scalar_one_or_none()
     if not reaction:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reaction not found")
+        raise HTTPException(status_code=404, detail="Reaction not found")
 
-    db.delete(reaction)
-    db.commit()
+    await db.delete(reaction)
+    await db.commit()
     return None
 

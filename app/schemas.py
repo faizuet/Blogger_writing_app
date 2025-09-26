@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, computed_field
 from typing import Optional, List, Literal
 
 
+# ---------------- User Schemas ----------------
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -22,6 +23,11 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+    model_config = {"extra": "forbid"}
+
+
+class TokenPairResponse(TokenResponse):
+    refresh_token: str
 
     model_config = {"extra": "forbid"}
 
@@ -38,6 +44,7 @@ class UserResponse(BaseModel):
     }
 
 
+# ---------------- Blog Schemas ----------------
 class BlogBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=200)
     content: str = Field(..., min_length=1)
@@ -68,14 +75,27 @@ class BlogResponse(BlogBase):
     }
 
 
+# ---- V2 Enhanced ----
+class ReactionSummary(BaseModel):
+    code: int
+    count: int
+
+    @computed_field
+    @property
+    def emoji(self) -> str:
+        return chr(self.code)
+
+
 class BlogResponseV2(BlogBase):
     id: str
     owner: UserResponse
     created_at: Optional[str]
     updated_at: Optional[str]
+
     comments_count: int = 0
-    reactions_summary: dict[int, int] = {}
+    reactions_summary: List[ReactionSummary] = []
     current_user_reaction: Optional[int] = None
+    is_owner: bool = False  # new field
 
     model_config = {
         "from_attributes": True,
@@ -83,8 +103,10 @@ class BlogResponseV2(BlogBase):
     }
 
 
+# ---------------- Comment Schemas ----------------
 class CommentBase(BaseModel):
     content: str = Field(..., min_length=1)
+
     model_config = {"extra": "forbid"}
 
 
@@ -94,7 +116,7 @@ class CommentCreate(CommentBase):
 
 class CommentResponse(CommentBase):
     id: str
-    user: UserResponse
+    owner: UserResponse
     blog_id: str
 
     model_config = {
@@ -116,11 +138,13 @@ class CommentResponseV2(CommentBase):
     }
 
 
+# ---------------- Reaction Schemas ----------------
 AllowedReactions = Literal[128077, 10084, 128514, 128562, 128546, 128545]
 
 
 class ReactionBase(BaseModel):
     code: AllowedReactions = Field(..., description="Allowed emoji code point")
+
     model_config = {"extra": "forbid"}
 
 
@@ -130,7 +154,7 @@ class ReactionCreate(ReactionBase):
 
 class ReactionResponse(ReactionBase):
     id: str
-    user: UserResponse
+    owner: UserResponse
     blog_id: str
 
     model_config = {
@@ -146,7 +170,7 @@ class ReactionResponse(ReactionBase):
 
 class ReactionResponseV2(ReactionBase):
     id: str
-    user: UserResponse
+    owner: UserResponse
     blog_id: str
 
     model_config = {
@@ -160,11 +184,11 @@ class ReactionResponseV2(ReactionBase):
         return chr(self.code)
 
 
+# ---------------- Model Linking ----------------
 BlogResponse.model_rebuild()
 BlogResponseV2.model_rebuild()
 CommentResponse.model_rebuild()
 CommentResponseV2.model_rebuild()
 ReactionResponse.model_rebuild()
 ReactionResponseV2.model_rebuild()
-
 
