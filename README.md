@@ -1,31 +1,65 @@
 # 📝 Blog App (FastAPI + MySQL)
 
-A clean practice backend project built with **FastAPI** and **MySQL**, featuring:
+A clean backend project built with **FastAPI** and **MySQL**, featuring **async endpoints** for high performance and efficiency.
 
-* 🔐 **JWT Authentication**
-* 👥 **Role-based access**:
+---
 
-  * **Writer** → can create, read, update, delete blogs
-  * **Reader** → can only read blogs
-* 📰 **Blog management**:
+## 🔐 Features
 
-  * V1: CRUD for writers, read-only for readers
-  * V2: CRUD with timestamps, comment count, reaction summary, and current user reaction
-* 💬 **Comment system**: readers & writers can comment on blogs
-* ⚡ **Reactions**: readers & writers can react to blogs (`like`, `love`, `haha`, `wow`, `sad`, `angry`)
-* 🗂️ **Modular project structure**
-* 🏗️ **Alembic migrations** for database schema
-* 🧪 **Postman-ready API collection** for full testing
+### Authentication & Authorization
+
+* **JWT Authentication** – secure login and access
+* **Role-based access**:
+
+  * **Reader** → read blogs, comment, react
+  * **Writer** → CRUD own blogs, comment, react
+  * **Admin** → CRUD any blog, comment, reaction
+
+### Blog Management
+
+* **V1**: CRUD for writers, read-only for readers
+* **V2**: Async CRUD with:
+
+  * `created_at` & `updated_at` timestamps
+  * Comments count per blog
+  * Reaction summary (all reactions & total count)
+  * Current user's reaction
+  * Admin privileges to manage any blog
+
+### Comments
+
+* Readers & writers can add comments
+* Admin can manage all comments
+* Async endpoints with timestamps and owner info in responses
+
+### Reactions
+
+* React to blogs using allowed emojis: `like 👍`, `love ❤️`, `haha 😂`, `wow 😲`, `sad 😢`, `angry 😡`
+* Add, update, or remove reactions
+* V2 includes:
+
+  * Total reaction count
+  * Summary per emoji
+  * Current user's reaction
+  * Admin can manage all reactions
+
+### Other Features
+
+* 🗂️ Modular project structure
+* 🏗️ Alembic migrations for database schema
+* ⚡ Fully async endpoints for V1 & V2
+* ✅ Optimized queries for comment counts & reactions in V2
+* 📦 Pydantic validation for request/response
 
 ---
 
 ## 🚀 Tech Stack
 
-* **FastAPI** – web framework
-* **MySQL** – database
+* **FastAPI** – Web framework
+* **MySQL** – Database
 * **SQLAlchemy** – ORM
-* **Alembic** – migrations
-* **Pydantic** – request/response validation
+* **Alembic** – Migrations
+* **Pydantic** – Validation
 * **Uvicorn** – ASGI server
 
 ---
@@ -36,27 +70,27 @@ A clean practice backend project built with **FastAPI** and **MySQL**, featuring
 my_blog_app/
 └── blog_app/
     ├── app/
-    │   ├── alembic/           # Database migrations
+    │   ├── alembic/           
     │   │   ├── versions/      
     │   │   ├── env.py
     │   │   └── script.py.mako
     │   │
-    │   ├── api/               # API routes
-    │   │   ├── auth.py        # Authentication (signup/login)
-    │   │   ├── v1_blog.py     # Blog, comment & reaction routes for V1
-    │   │   └── v2_blog.py     # Blog, comment & reaction routes for V2 with timestamps
+    │   ├── api/               
+    │   │   ├── auth.py        
+    │   │   ├── v1_blog.py     
+    │   │   └── v2_blog.py     
     │   │
-    │   ├── core/              # Core utilities
-    │   │   ├── database.py    # DB session/engine
-    │   │   └── security.py    # JWT & password hashing
+    │   ├── core/              
+    │   │   ├── database.py    
+    │   │   └── security.py    
     │   │
-    │   ├── main.py            # FastAPI entry point
-    │   ├── models.py          # SQLAlchemy models (User, Blog, Comment, Reaction)
-    │   └── schemas.py         # Pydantic schemas (User, Blog, Comment, Reaction)
+    │   ├── main.py            
+    │   ├── models.py          
+    │   └── schemas.py         
     │
-    ├── .env                   # Environment variables
-    ├── alembic.ini            # Alembic config
-    └── requirements.txt       # Dependencies
+    ├── .env                   
+    ├── alembic.ini            
+    └── requirements.txt       
 ```
 
 ---
@@ -86,7 +120,7 @@ my_blog_app/
 
 4. **Configure `.env`**
 
-   ```env
+   ```
    SECRET_KEY=your_secret_key
    ALGORITHM=HS256
    ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -116,55 +150,48 @@ my_blog_app/
 
 ### Auth
 
-* `POST /auth/signup` → Register new user (role: `reader` or `writer`)
+* `POST /auth/signup` → Register new user
 * `POST /auth/login` → Login & get JWT token
 
 ### Blogs V1
 
-* `POST /v1/blogs/` → Create blog (writers only)
-* `GET /v1/blogs/` → Get all blogs
-* `GET /v1/blogs/{id}` → Get blog by ID
-* `PUT /v1/blogs/{id}` → Update blog (owner only)
-* `DELETE /v1/blogs/{id}` → Delete blog (owner only)
+* CRUD endpoints (writer only for create/update/delete)
+* Read-only for readers
 
 ### Blogs V2
 
-* `POST /v2/blogs/` → Create blog (writers only)
-* `GET /v2/blogs/` → Get all blogs with timestamps, comment count, reaction summary
-* `GET /v2/blogs/{id}` → Get blog by ID with extra metadata
-* `DELETE /v2/blogs/{id}` → Delete blog (owner only)
+* Async CRUD endpoints
+* Extra metadata:
+
+  * Timestamps (`created_at`, `updated_at`)
+  * Comments count
+  * Reaction summary & total reactions
+  * Current user's reaction
+  * Admin privileges
 
 ### Comments V1 & V2
 
 * `POST /v{1|2}/blogs/{id}/comments` → Add comment
-* `GET /v{1|2}/blogs/{id}/comments` → Get all comments
-* `DELETE /v{1|2}/blogs/{id}/comments/{comment_id}` → Delete comment (owner only)
+* `GET /v{1|2}/blogs/{id}/comments` → Get comments
+* `DELETE /v{1|2}/blogs/{id}/comments/{comment_id}` → Delete comment (owner/admin)
 
 ### Reactions V1 & V2
 
 * `POST /v{1|2}/blogs/{id}/reactions` → Add or update reaction
-* `GET /v{1|2}/blogs/{id}/reactions` → Get all reactions
-* `DELETE /v{1|2}/blogs/{id}/reactions` → Remove your reaction
+* `GET /v{1|2}/blogs/{id}/reactions` → Get all reactions & summary
+* `DELETE /v{1|2}/blogs/{id}/reactions` → Remove reaction (owner/admin)
 
 ---
 
 ## 🛠️ Notes
 
 * Database: **MySQL**
-
 * Use **Alembic** for schema changes:
 
   ```bash
   alembic revision --autogenerate -m "message"
   alembic upgrade head
   ```
-
-* Default roles:
-
-  * **reader** (default)
-  * **writer** (set during signup)
-
-* **Reactions** allowed: `like 👍`, `love ❤️`, `haha 😂`, `wow 😲`, `sad 😢`, `angry 😡`
-
-* **V2 Enhancements**: timestamps (`created_at`, `updated_at`), comment counts, reaction summaries, current user reaction
+* Default roles: `reader` (default), `writer`, `admin`
+* V2 enhancements: timestamps, comment counts, reaction summaries, current user reaction, admin privileges
 
