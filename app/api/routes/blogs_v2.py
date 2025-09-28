@@ -60,19 +60,26 @@ async def fetch_blog_counts(db: AsyncSession, blog_ids: list[str], current_user:
     return comments_count_map, reactions_summary_map, user_reactions_map
 
 
-def map_blog_response(blog: Blog, comments_count_map, reactions_summary_map, user_reactions_map, current_user: Optional[User]):
+def map_blog_response(
+    blog: Blog,
+    comments_count_map,
+    reactions_summary_map,
+    user_reactions_map,
+    current_user: Optional[User],
+):
     return BlogResponseV2(
         id=blog.id,
         title=blog.title,
         content=blog.content,
-        owner=UserResponse.from_orm(blog.owner),
+        user=UserResponse.from_orm(blog.user),
         created_at=blog.created_at.isoformat() if blog.created_at else None,
         updated_at=blog.updated_at.isoformat() if blog.updated_at else None,
         comments_count=comments_count_map.get(blog.id, 0),
         reactions_summary=reactions_summary_map.get(blog.id, []),
         current_user_reaction=user_reactions_map.get(blog.id),
-        is_owner=(current_user.id == blog.owner_id) if current_user else False
+        is_owner=(current_user.id == blog.user_id) if current_user else False,
     )
+
 
 
 # -------- Blog Routes --------

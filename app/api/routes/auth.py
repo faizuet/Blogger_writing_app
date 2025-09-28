@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from passlib.context import CryptContext
@@ -24,14 +24,29 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+# ---------------- Dependency to get user from refresh token ----------------
+async def get_current_user_from_refresh_token(
+    refresh_token: str = Body(..., embed=True),
+    db: AsyncSession = Depends(get_async_db),
+) -> User:
+    """
+    Extract user from a refresh token.
+    Can be used as a dependency to inject `current_user` in endpoints.
+    """
+    payload = security.verify_token(refresh_token, token_type="refresh")
+    username: str = payload.get("sub")
+
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
+
+
 # ---------------- Routes ----------------
 @router.post("/signup", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user: schemas.UserCreate, db: AsyncSession = Depends(get_async_db)):
-    """
-    Create a new user account.
-    - Rejects duplicate usernames or emails.
-    - Stores hashed passwords (never plain-text).
-    """
+    """Create a new user account."""
     # Check duplicate username
     result = await db.execute(select(User).where(User.username == user.username))
     if result.scalar_one_or_none():
@@ -51,17 +66,12 @@ async def signup(user: schemas.UserCreate, db: AsyncSession = Depends(get_async_
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
-
     return new_user
 
 
 @router.post("/login", response_model=schemas.TokenPairResponse)
 async def login(user: schemas.UserLogin, db: AsyncSession = Depends(get_async_db)):
-    """
-    Authenticate user and return access + refresh tokens.
-    - Verifies username & password.
-    - Issues both short-lived access token and long-lived refresh token.
-    """
+    """Authenticate user and return access + refresh tokens."""
     result = await db.execute(select(User).where(User.username == user.username))
     db_user = result.scalar_one_or_none()
 
@@ -84,22 +94,16 @@ async def login(user: schemas.UserLogin, db: AsyncSession = Depends(get_async_db
 
 @router.post("/refresh", response_model=schemas.TokenResponse)
 async def refresh_token(
-    refresh_token: str = Body(..., embed=True),
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
+    current_user: User = Depends(get_current_user_from_refresh_token)
 ):
     """
-    Exchange a valid refresh token for a new access token.
-    - Expects JSON body: { "refresh_token": "<token>" }
-    - Ensures the refresh token is valid & belongs to an active user.
+    Refresh access token using a refresh token.
+    `current_user` is injected from refresh token like other endpoints.
     """
-    payload = security.verify_token(refresh_token, token_type="refresh")
-    username: str = payload.get("sub")
+    # Optional: log activity
+    print(f"User {current_user.username} refreshed token from IP {request.client.host}")
 
-    result = await db.execute(select(User).where(User.username == username))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-
-    new_access_token = security.create_access_token({"sub": user.username})
+    new_access_token = security.create_access_token({"sub": current_user.username})
     return schemas.TokenResponse(access_token=new_access_token, token_type="bearer")
 
