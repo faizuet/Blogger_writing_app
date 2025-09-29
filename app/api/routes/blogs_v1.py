@@ -1,9 +1,12 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import or_
+
 from app.core.database import get_async_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user_optional, get_current_user
 from app.schemas import (
     BlogCreate, BlogUpdate, BlogResponse,
     CommentCreate, CommentResponse,
@@ -25,11 +28,11 @@ async def create_blog(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a blog (writers only)."""
-    if current_user.role != "writer":
-        raise HTTPException(status_code=403, detail="Only writers can create blogs")
+    """Create a blog (writers & admins only)."""
+    if current_user.role not in {"writer", "admin"}:
+        raise HTTPException(status_code=403, detail="Only writers or admins can create blogs")
 
-    new_blog = Blog(title=blog.title, content=blog.content, owner_id=current_user.id)
+    new_blog = Blog(title=blog.title, content=blog.content, user_id=current_user.id)
     db.add(new_blog)
     await db.commit()
     await db.refresh(new_blog)
@@ -41,36 +44,33 @@ async def create_blog(
 @router.get("/", response_model=list[BlogResponse])
 async def list_blogs(
     db: AsyncSession = Depends(get_async_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     skip: int = Query(0, ge=0),
     limit: int = Query(10, le=100),
-    search: str | None = None,
-    author: str | None = None,
+    search: Optional[str] = None,
+    author: Optional[str] = None,
 ):
     """Public: Get blogs with pagination, search & filter."""
     query = select(Blog)
-
     if not current_user or current_user.role != "admin":
-        query = query.where(Blog.deleted == False)
+        query = query.where(Blog.deleted.is_(False))
 
     if search:
         query = query.where(
-            or_(
-                Blog.title.ilike(f"%{search}%"),
-                Blog.content.ilike(f"%{search}%")
-            )
+            or_(Blog.title.ilike(f"%{search}%"), Blog.content.ilike(f"%{search}%"))
         )
+
     if author:
         query = query.join(User).where(User.username == author)
 
     result = await db.execute(query.offset(skip).limit(limit))
-    blogs = result.scalars().all()
+    blogs = result.scalars().unique().all()
 
     for blog in blogs:
         comments_result = await db.execute(
             select(Comment).where(
                 Comment.blog_id == blog.id,
-                (Comment.deleted == False) | (current_user and current_user.role == "admin")
+                or_(Comment.deleted.is_(False), current_user and current_user.role == "admin")
             )
         )
         blog.comments = comments_result.scalars().all()
@@ -87,12 +87,12 @@ async def list_blogs(
 async def get_blog(
     blog_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Public: Get a single blog by ID with comments & reactions."""
     query = select(Blog).where(Blog.id == blog_id)
     if not current_user or current_user.role != "admin":
-        query = query.where(Blog.deleted == False)
+        query = query.where(Blog.deleted.is_(False))
 
     result = await db.execute(query)
     blog = result.scalar_one_or_none()
@@ -102,7 +102,7 @@ async def get_blog(
     comments_result = await db.execute(
         select(Comment).where(
             Comment.blog_id == blog.id,
-            (Comment.deleted == False) | (current_user and current_user.role == "admin")
+            or_(Comment.deleted.is_(False), current_user and current_user.role == "admin")
         )
     )
     blog.comments = comments_result.scalars().all()
@@ -128,7 +128,7 @@ async def update_blog(
 
     if not blog or blog.deleted:
         raise HTTPException(status_code=404, detail="Blog not found")
-    if blog.owner_id != current_user.id and current_user.role != "admin":
+    if blog.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
     if blog_data.title is not None:
@@ -139,7 +139,9 @@ async def update_blog(
     await db.commit()
     await db.refresh(blog)
 
-    comments_result = await db.execute(select(Comment).where(Comment.blog_id == blog.id))
+    comments_result = await db.execute(
+        select(Comment).where(Comment.blog_id == blog.id, Comment.deleted.is_(False))
+    )
     blog.comments = comments_result.scalars().all()
 
     reactions_result = await db.execute(select(Reaction).where(Reaction.blog_id == blog.id))
@@ -160,7 +162,7 @@ async def delete_blog(
 
     if not blog:
         raise HTTPException(status_code=404, detail="Blog not found")
-    if blog.owner_id != current_user.id and current_user.role != "admin":
+    if blog.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
     blog.deleted = True
@@ -177,7 +179,7 @@ async def add_comment(
     current_user: User = Depends(get_current_user),
 ):
     """Add a comment (any logged-in user)."""
-    result = await db.execute(select(Blog).where(Blog.id == blog_id, Blog.deleted == False))
+    result = await db.execute(select(Blog).where(Blog.id == blog_id, Blog.deleted.is_(False)))
     blog = result.scalar_one_or_none()
     if not blog:
         raise HTTPException(status_code=404, detail="Blog not found")
@@ -193,12 +195,12 @@ async def add_comment(
 async def get_comments(
     blog_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Public: Get all comments for a blog."""
     query = select(Comment).where(Comment.blog_id == blog_id)
     if not current_user or current_user.role != "admin":
-        query = query.where(Comment.deleted == False)
+        query = query.where(Comment.deleted.is_(False))
 
     result = await db.execute(query)
     return result.scalars().all()
@@ -236,7 +238,7 @@ async def add_or_update_reaction(
     current_user: User = Depends(get_current_user),
 ):
     """Add or update a reaction (any logged-in user)."""
-    result = await db.execute(select(Blog).where(Blog.id == blog_id, Blog.deleted == False))
+    result = await db.execute(select(Blog).where(Blog.id == blog_id, Blog.deleted.is_(False)))
     blog = result.scalar_one_or_none()
     if not blog:
         raise HTTPException(status_code=404, detail="Blog not found")
@@ -272,14 +274,26 @@ async def get_reactions(blog_id: str, db: AsyncSession = Depends(get_async_db)):
 @router.delete("/{blog_id}/reactions", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_reaction(
     blog_id: str,
+    user_id: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove your reaction (only your own)."""
-    result = await db.execute(
-        select(Reaction).where(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id)
-    )
+    """
+    Remove a reaction.
+    - Normal user: removes only their own reaction.
+    - Admin: can remove any user's reaction by specifying `user_id`.
+    """
+    query = select(Reaction).where(Reaction.blog_id == blog_id)
+
+    # Admin can remove another user's reaction
+    if current_user.role == "admin" and user_id:
+        query = query.where(Reaction.user_id == user_id)
+    else:
+        query = query.where(Reaction.user_id == current_user.id)
+
+    result = await db.execute(query)
     reaction = result.scalar_one_or_none()
+
     if not reaction:
         raise HTTPException(status_code=404, detail="Reaction not found")
 

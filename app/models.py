@@ -1,11 +1,21 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, ForeignKey, Text, Integer, Boolean, DateTime
+from sqlalchemy import (
+    Column,
+    String,
+    ForeignKey,
+    Text,
+    Integer,
+    Boolean,
+    DateTime,
+    Enum,
+)
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 # -------- User Roles --------
 USER_ROLES = ("reader", "writer", "admin")
+
 
 # -------- User Model --------
 class User(Base):
@@ -22,11 +32,32 @@ class User(Base):
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(String(20), default="reader", nullable=False)  # can be 'reader', 'writer', 'admin'
 
-    blogs = relationship("Blog", back_populates="owner", cascade="all, delete-orphan")
-    comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
-    reactions = relationship("Reaction", back_populates="user", cascade="all, delete-orphan")
+    # Only allow roles from USER_ROLES
+    role = Column(
+        Enum(*USER_ROLES, name="user_roles"),
+        default="writer",
+        nullable=False,
+    )
+
+    blogs = relationship(
+        "Blog",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    comments = relationship(
+        "Comment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    reactions = relationship(
+        "Reaction",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 # -------- Blog Model --------
@@ -43,16 +74,30 @@ class Blog(Base):
     )
     title = Column(String(200), index=True, nullable=False)
     content = Column(Text, nullable=False)
-    owner_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     # v2 fields
     deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    owner = relationship("User", back_populates="blogs")
-    comments = relationship("Comment", back_populates="blog", cascade="all, delete-orphan")
-    reactions = relationship("Reaction", back_populates="blog", cascade="all, delete-orphan")
+    user = relationship(
+        "User",
+        back_populates="blogs",
+        lazy="selectin",
+    )
+    comments = relationship(
+        "Comment",
+        back_populates="blog",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    reactions = relationship(
+        "Reaction",
+        back_populates="blog",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 # -------- Comment Model --------
@@ -76,8 +121,16 @@ class Comment(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    blog = relationship("Blog", back_populates="comments")
-    user = relationship("User", back_populates="comments")
+    blog = relationship(
+        "Blog",
+        back_populates="comments",
+        lazy="selectin",
+    )
+    user = relationship(
+        "User",
+        back_populates="comments",
+        lazy="selectin",
+    )
 
 
 # -------- Reaction Model --------
@@ -100,6 +153,14 @@ class Reaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    blog = relationship("Blog", back_populates="reactions")
-    user = relationship("User", back_populates="reactions")
+    blog = relationship(
+        "Blog",
+        back_populates="reactions",
+        lazy="selectin",
+    )
+    user = relationship(
+        "User",
+        back_populates="reactions",
+        lazy="selectin",
+    )
 
