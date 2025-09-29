@@ -1,6 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field, computed_field
-from typing import Optional, List, Literal
-
+from pydantic import BaseModel, EmailStr, Field, computed_field, RootModel
+from typing import Optional, List, Literal, Dict
 
 # ---------------- User Schemas ----------------
 class UserCreate(BaseModel):
@@ -13,7 +12,7 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    username: str
+    username: str = Field(..., min_length=3, max_length=50, description="Username only for login")
     password: str
 
     model_config = {"extra": "forbid"}
@@ -22,12 +21,14 @@ class UserLogin(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_in: Optional[int] = None
 
     model_config = {"extra": "forbid"}
 
 
 class TokenPairResponse(TokenResponse):
     refresh_token: str
+    refresh_expires_in: Optional[int] = None
 
     model_config = {"extra": "forbid"}
 
@@ -65,7 +66,7 @@ class BlogUpdate(BaseModel):
 
 class BlogResponse(BlogBase):
     id: str
-    user: UserResponse   # changed from owner → user
+    user: UserResponse
     comments: Optional[List["CommentResponse"]] = []
     reactions: Optional[List["ReactionResponse"]] = []
 
@@ -94,7 +95,7 @@ class BlogResponseV2(BlogBase):
 
     comments_count: int = 0
     reactions_summary: List[ReactionSummary] = []
-    current_user_reaction: Optional[int] = None
+    current_user_reaction: Optional[int]
     is_owner: bool = False
 
     model_config = {
@@ -116,7 +117,7 @@ class CommentCreate(CommentBase):
 
 class CommentResponse(CommentBase):
     id: str
-    user: UserResponse   # changed from owner → user
+    user: UserResponse
     blog_id: str
 
     model_config = {
@@ -127,7 +128,7 @@ class CommentResponse(CommentBase):
 
 class CommentResponseV2(CommentBase):
     id: str
-    user: UserResponse   # changed from owner → user
+    user: UserResponse
     blog_id: str
     created_at: Optional[str]
     updated_at: Optional[str]
@@ -136,6 +137,11 @@ class CommentResponseV2(CommentBase):
         "from_attributes": True,
         "extra": "forbid"
     }
+
+
+# ---- Bulk Comments Response ----
+class BulkCommentsResponse(RootModel):
+    root: Dict[str, List[CommentResponseV2]]
 
 
 # ---------------- Reaction Schemas ----------------
@@ -154,7 +160,7 @@ class ReactionCreate(ReactionBase):
 
 class ReactionResponse(ReactionBase):
     id: str
-    user: UserResponse   # changed from owner → user
+    user: UserResponse
     blog_id: str
 
     model_config = {
@@ -170,7 +176,7 @@ class ReactionResponse(ReactionBase):
 
 class ReactionResponseV2(ReactionBase):
     id: str
-    user: UserResponse   # changed from owner → user
+    user: UserResponse
     blog_id: str
 
     model_config = {
@@ -182,6 +188,17 @@ class ReactionResponseV2(ReactionBase):
     @property
     def emoji(self) -> str:
         return chr(self.code)
+
+
+# ---- Bulk Reactions Response ----
+class BulkReactionItem(BaseModel):
+    reactions: List[ReactionResponseV2]
+    summary: List[ReactionSummary]
+    current_user_reaction: Optional[int]
+
+
+class BulkReactionsResponse(RootModel):
+    root: Dict[str, BulkReactionItem]
 
 
 # ---------------- Model Linking ----------------
