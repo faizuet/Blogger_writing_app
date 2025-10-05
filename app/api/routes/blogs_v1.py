@@ -1,20 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import or_
 
+from app.api.routes.blog_utils_v1 import (
+    attach_comments_and_reactions,
+    get_blog_or_404,
+    validate_reaction_code,
+)
 from app.core.database import get_async_db
 from app.core.security import get_current_user
+from app.models import Blog, Comment, Reaction, User, UserRole
 from app.schemas import (
-    BlogCreate, BlogUpdate, BlogResponse,
-    CommentCreate, CommentResponse,
-    ReactionCreate, ReactionResponse,
-)
-from app.models import User, Blog, Comment, Reaction
-from app.api.routes.blog_utils_v1 import (
-    get_blog_or_404,
-    attach_comments_and_reactions,
-    validate_reaction_code,
+    BlogCreate,
+    BlogResponse,
+    BlogUpdate,
+    CommentCreate,
+    CommentResponse,
+    ReactionCreate,
+    ReactionResponse,
 )
 
 # ---------------- Router Setup ----------------
@@ -27,8 +31,11 @@ async def create_blog(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in {"writer", "admin"}:
-        raise HTTPException(status_code=403, detail="Only writers or admins can create blogs")
+    # ✅ Proper enum comparison
+    if current_user.role not in {UserRole.writer, UserRole.admin}:
+        raise HTTPException(
+            status_code=403, detail="Only writers or admins can create blogs"
+        )
 
     new_blog = Blog(title=blog.title, content=blog.content, user_id=current_user.id)
     db.add(new_blog)
@@ -86,7 +93,7 @@ async def update_blog(
         raise HTTPException(status_code=404, detail="Blog not found")
 
     # Only admin or owner can update
-    if current_user.role not in {"admin"} and blog.user_id != current_user.id:
+    if current_user.role != UserRole.admin and blog.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     if blog_data.title is not None:
@@ -106,16 +113,18 @@ async def delete_blog(
     current_user: User = Depends(get_current_user),
 ):
     blog = await get_blog_or_404(db, blog_id, current_user=current_user)
-    if current_user.role not in {"admin"} and blog.user_id != current_user.id:
+    if current_user.role != UserRole.admin and blog.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     blog.deleted = True
     await db.commit()
-    return None
-
 
 # ---------------- Comment Routes ----------------
-@router.post("/{blog_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{blog_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_comment(
     blog_id: str,
     comment: CommentCreate,
@@ -123,7 +132,9 @@ async def add_comment(
     current_user: User = Depends(get_current_user),
 ):
     blog = await get_blog_or_404(db, blog_id, current_user=current_user)
-    new_comment = Comment(content=comment.content, blog_id=blog.id, user_id=current_user.id)
+    new_comment = Comment(
+        content=comment.content, blog_id=blog.id, user_id=current_user.id
+    )
     db.add(new_comment)
     await db.commit()
     await db.refresh(new_comment)
@@ -137,12 +148,14 @@ async def get_comments(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Comment).where(Comment.blog_id == blog_id, Comment.deleted == False)
+        select(Comment).where(Comment.blog_id == blog_id, Comment.deleted.is_(False))
     )
     return result.scalars().all()
 
 
-@router.delete("/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_comment(
     blog_id: str,
     comment_id: str,
@@ -155,16 +168,19 @@ async def delete_comment(
     comment = result.scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if current_user.role not in {"admin"} and comment.user_id != current_user.id:
+    if current_user.role != UserRole.admin and comment.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     comment.deleted = True
     await db.commit()
-    return None
 
 
 # ---------------- Reaction Routes ----------------
-@router.post("/{blog_id}/reactions", response_model=ReactionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{blog_id}/reactions",
+    response_model=ReactionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_or_update_reaction(
     blog_id: str,
     reaction: ReactionCreate,
@@ -175,7 +191,9 @@ async def add_or_update_reaction(
     validate_reaction_code(reaction.code)
 
     result = await db.execute(
-        select(Reaction).where(Reaction.blog_id == blog_id, Reaction.user_id == current_user.id)
+        select(Reaction).where(
+            Reaction.blog_id == blog_id, Reaction.user_id == current_user.id
+        )
     )
     existing_reaction = result.scalar_one_or_none()
 
@@ -185,7 +203,9 @@ async def add_or_update_reaction(
         await db.refresh(existing_reaction)
         return existing_reaction
 
-    new_reaction = Reaction(code=reaction.code, blog_id=blog.id, user_id=current_user.id)
+    new_reaction = Reaction(
+        code=reaction.code, blog_id=blog.id, user_id=current_user.id
+    )
     db.add(new_reaction)
     await db.commit()
     await db.refresh(new_reaction)
@@ -210,7 +230,7 @@ async def remove_reaction(
     current_user: User = Depends(get_current_user),
 ):
     query = select(Reaction).where(Reaction.blog_id == blog_id)
-    if current_user.role == "admin" and user_id:
+    if current_user.role == UserRole.admin and user_id:
         query = query.where(Reaction.user_id == user_id)
     else:
         query = query.where(Reaction.user_id == current_user.id)
@@ -221,5 +241,4 @@ async def remove_reaction(
         raise HTTPException(status_code=404, detail="Reaction not found")
     await db.delete(reaction)
     await db.commit()
-    return None
 
