@@ -1,217 +1,161 @@
-# 📝 Blog App (FastAPI + MySQL)
+# 📝 Blog API (FastAPI + PostgreSQL + Async SQLAlchemy)
 
-A fully **async backend application** built with **FastAPI** and **MySQL**, featuring **role-based access**, **blogs**, **comments**, **reactions**, and **enhanced metadata** in V2. Designed for **high performance, scalability**, and **modern async practices**.
-
----
-
-## 🌟 Features
-
-### 1. **Authentication & Authorization**
-
-* **JWT Authentication** – secure login and access.
-* **Role-based access**:
-
-  * **Reader** → Read blogs, view/add comments, react.
-  * **Writer** → CRUD own blogs, add comments, react.
-  * **Admin** → CRUD any blog, comment, or reaction.
+A fully asynchronous, production-ready Blog API built with **FastAPI**, **SQLAlchemy**, and **PostgreSQL**, featuring authentication, blog posts, comments, reactions, and a social friends system. Designed with clean architecture, type safety, and modern async patterns.
 
 ---
 
-### 2. **Blogs V1 vs V2 Comparison**
+## 🚀 Features
 
-| Feature               | V1             | V2                                             |
-| --------------------- | -------------- | ---------------------------------------------- |
-| CRUD                  | ✅ Writer/Admin | ✅ Writer/Admin                                 |
-| Async endpoints       | ✅              | ✅                                              |
-| Soft delete           | ✅              | ✅                                              |
-| Timestamps            | ❌              | ✅ (`created_at`, `updated_at`)                 |
-| Comments count        | ❌              | ✅                                              |
-| Reaction summary      | ❌              | ✅ (per emoji & total)                          |
-| Current user reaction | ❌              | ✅                                              |
-| `is_owner` flag       | ❌              | ✅                                              |
-| Sorting               | ❌              | ✅ (`newest`, `most_commented`, `most_reacted`) |
-| Bulk endpoints        | ❌              | ✅ (`bulk-comments`, `bulk-reactions`)          |
+### 🧠 Core
+- Full **CRUD** operations for blogs
+- Async **SQLAlchemy ORM** with PostgreSQL
+- Authentication with **JWT tokens**
+- Role-based access control (Admin/User)
+- Secure password hashing with `bcrypt`
 
----
+### 💬 Social Features
+- Friend requests (send, accept, decline, cancel)
+- Comment system with nested comments
+- Like/Dislike system for blogs
+- User profiles and relationships
 
-### 3. **Comments**
-
-* Add, view, and soft delete comments (`deleted=True`).
-* Role-based access: Owner or admin can delete comments.
-* **V2 enhancements**:
-
-  * Async endpoints
-  * `created_at` & `updated_at`
-  * Owner info included
-* Bulk fetching supported for multiple blogs.
+### 🛠️ Developer Features
+- **Alembic** migrations for schema management
+- Modular folder structure
+- `.env` configuration
+- Fully asynchronous backend
 
 ---
 
-### 4. **Reactions**
+## 🧩 Tech Stack
 
-* React to blogs using emojis: 👍 Like, ❤️ Love, 😂 Haha, 😲 Wow, 😢 Sad, 😡 Angry.
-* Add, update, or remove reactions.
-* Role-based access: Admin → manage any reaction, Users → manage own reaction.
-* **V2 enhancements**:
-
-  * Reaction summary per emoji
-  * Total reaction count
-  * Current user reaction
-  * Bulk fetching for multiple blogs
-
----
-
-### 5. **Other Features**
-
-* Fully **async endpoints** for all operations.
-* Soft delete mechanism for blogs and comments.
-* Modular project structure with helper utilities:
-
-  * `blog_utils_v1.py` & `blog_utils_v2.py`
-* Optimized queries for comment counts and reactions.
-* Pydantic validation for requests/responses.
-* Alembic migrations for database schema management.
+| Category | Technology |
+|-----------|-------------|
+| Framework | FastAPI |
+| Database | PostgreSQL |
+| ORM | SQLAlchemy (async) |
+| Auth | JWT (python-jose) |
+| Passwords | Passlib + bcrypt |
+| Migrations | Alembic |
+| Env Management | python-dotenv |
+| Validation | Pydantic v2 |
 
 ---
 
-## 🛠️ Tech Stack
-
-* **FastAPI** – Web framework
-* **MySQL** – Database
-* **SQLAlchemy (Async)** – ORM
-* **Alembic** – Database migrations
-* **Pydantic** – Validation
-* **Uvicorn** – ASGI server
-
----
-
-## 📂 Project Structure
+## 📁 Project Structure
 
 ```
 my_blog_app/
-└── blog_app/
-    ├── app/
-    │   ├── alembic/
-    │   │   ├── versions/
-    │   │   ├── env.py
-    │   │   └── script.py.mako
-    │   │
-    │   ├── api/
-    │   │   ├── auth.py
-    │   │   └── routes/
-    │   │       ├── blogs_v1.py
-    │   │       ├── blogs_v2.py
-    │   │       ├── blog_utils_v1.py
-    │   │       └── blog_utils_v2.py
-    │   │
-    │   ├── core/
-    │   │   ├── database.py
-    │   │   └── security.py
-    │   │
-    │   ├── main.py
-    │   ├── models.py
-    │   └── schemas.py
-    │
-    ├── .env
-    ├── alembic.ini
-    └── requirements.txt
+└── blog_app
+    └── app
+        ├── alembic/
+        ├── api/
+        │   └── routes/
+        │       ├── __init__.py
+        │       ├── auth.py
+        │       ├── blog_utils_v1.py
+        │       ├── blog_utils_v2.py
+        │       ├── blogs_v1.py
+        │       ├── blogs_v2.py
+        │       ├── friends_v2.py
+        │       └── security_utils.py
+        ├── __init__.py
+        └── main.py
+    ├── core/
+    │   ├── __init__.py
+    │   ├── database.py
+    │   └── security.py
+    ├── __init__.py
+    ├── main.py
+    ├── models.py
+    └── schemas.py
+venv/
+.env
+.gitignore
+alembic.ini
+README.md
+requirements.txt
+
 ```
 
 ---
 
-## ⚡ Setup Instructions
+## ⚙️ Setup & Installation
 
-1. **Clone the repo**
-
+### 1️⃣ Clone the repository
 ```bash
-git clone <https://github.com/faizuet/Blogger_writing_app.git>
-cd my_blog_app/blog_app
+git clone https://github.com/faizuet/blog_app.git
+cd blog_app
 ```
 
-2. **Create a virtual environment**
-
+### 2️⃣ Create & activate a virtual environment
 ```bash
 python -m venv venv
-venv\Scripts\activate      # Windows
-source venv/bin/activate   # macOS/Linux
+source venv/Scripts/activate  # on Windows
+source venv/bin/activate      # on Mac/Linux
 ```
 
-3. **Install dependencies**
-
+### 3️⃣ Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **Configure `.env`**
+### 4️⃣ Configure environment variables
+Create a `.env` file in the root directory:
 
 ```env
-SECRET_KEY=your_secret_key
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
 DB_USER=bloguser
 DB_PASSWORD=user321
 DB_HOST=localhost
-DB_PORT=3306
+DB_PORT=5432
 DB_NAME=blog_app
+JWT_SECRET_KEY=your_secret_key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
 
-5. **Run migrations**
-
+### 5️⃣ Run database migrations
 ```bash
+alembic revision --autogenerate -m "init"
 alembic upgrade head
 ```
 
-6. **Start the server**
-
+### 6️⃣ Start the development server
 ```bash
 uvicorn app.main:app --reload
 ```
 
----
-
-## 🔗 API Overview
-
-### Auth
-
-* `POST /auth/signup` → Register new user
-* `POST /auth/login` → Login & get JWT token
-
-### Blogs
-
-* V1 → CRUD (Writer/Admin), read-only for readers
-* V2 → Async CRUD + metadata + bulk endpoints + sorting
-
-### Comments
-
-* `POST /v{1|2}/blogs/{id}/comments` → Add comment
-* `GET /v{1|2}/blogs/{id}/comments` → List comments
-* `DELETE /v{1|2}/blogs/{id}/comments/{comment_id}` → Soft delete comment
-
-### Reactions
-
-* `POST /v{1|2}/blogs/{id}/reactions` → Add or update reaction
-* `GET /v{1|2}/blogs/{id}/reactions` → List reactions (V2 includes summary & current user reaction)
-* `DELETE /v{1|2}/blogs/{id}/reactions` → Remove reaction (owner/admin)
-
-### Bulk Endpoints (V2)
-
-* `GET /v2/blogs/bulk-comments?blog_ids=...`
-* `GET /v2/blogs/bulk-reactions?blog_ids=...`
+### 7️⃣ Open in browser
+Go to 👉 **http://127.0.0.1:8000/docs**
 
 ---
 
-## 💡 Notes
+## 🔄 Alembic Migration Commands
 
-* **All endpoints are fully async**
-* Soft delete for blogs/comments
-* Default roles: `reader` (default), `writer`, `admin`
-* Use Alembic for migrations:
+| Command | Description |
+|----------|--------------|
+| `alembic init app/alembic` | Initialize migrations folder |
+| `alembic revision --autogenerate -m "desc"` | Create new migration |
+| `alembic upgrade head` | Apply migrations |
 
-```bash
-alembic revision --autogenerate -m "message"
-alembic upgrade head
-```
+---
 
-* V2 enhancements: metadata aggregation, sorting, bulk fetching, reaction summaries, timestamps, `is_owner` flag
+## 🧠 Future Enhancements (AI Integration Ideas)
 
+- Smart blog tag generation using NLP
+- AI-powered friend suggestions
+- Comment sentiment analysis
+- Auto content moderation
+
+---
+
+## 🧑‍💻 Author
+
+**Muhammad Faiz**  
+Backend Software Engineer | Python, FastAPI, Flask, MySQL, Docker, Git & Github | AI & Deep Learning Enthusiast
+
+---
+
+## 📜 License
+
+MIT License © 2025

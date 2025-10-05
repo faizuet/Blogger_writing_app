@@ -2,10 +2,9 @@
 # Python
 # --------------------
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 *.db
+*.sqlite3
 
 # --------------------
 # Virtual Environments
@@ -18,9 +17,30 @@ env/
 # Environment & Secrets
 # --------------------
 .env
+.env.*
+*.pem
+*.key
+
+# --------------------
+# IDE / Editor Files
+# --------------------
+.idea/
+*.code-workspace
 
 # --------------------
 # Alembic Migrations Cache
 # --------------------
 app/alembic/__pycache__/
 app/alembic/versions/__pycache__/
+
+# --------------------
+# Logs & Temp Files
+# --------------------
+*.log
+.DS_Store
+Thumbs.db
+__pypackages__/
+.cache/
+.mypy_cache/
+pytest_cache/
+

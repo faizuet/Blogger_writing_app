@@ -1,48 +1,61 @@
-from pydantic import BaseModel, EmailStr, Field, computed_field, RootModel
-from typing import Optional, List, Literal, Dict
+import uuid
+from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, EmailStr, Field, RootModel, computed_field
+
+
+# ---------------- User Roles Enum ----------------
+class UserRole(str, Enum):
+    reader = "reader"
+    writer = "writer"
+    admin = "admin"
+
 
 # ---------------- User Schemas ----------------
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=128)
-    role: Optional[Literal["reader", "writer", "admin"]] = "writer"
+    role: Optional[UserRole] = UserRole.writer
 
     model_config = {"extra": "forbid"}
 
 
 class UserLogin(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50, description="Username only for login")
+    username: str = Field(
+        ..., min_length=3, max_length=50, description="Username only for login"
+    )
     password: str
 
     model_config = {"extra": "forbid"}
 
 
+class UserResponse(BaseModel):
+    id: uuid.UUID
+    username: str
+    email: EmailStr
+    role: UserRole
+
+    model_config = {"from_attributes": True, "extra": "forbid"}
+
+
+# ---------------- Token Schemas ----------------
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    expires_in: Optional[int] = None
+    access_expires_utc: Optional[str] = None
 
     model_config = {"extra": "forbid"}
 
 
 class TokenPairResponse(TokenResponse):
     refresh_token: str
-    refresh_expires_in: Optional[int] = None
+    refresh_expires_utc: Optional[str] = None
+    refresh_expires_local: Optional[str] = None
 
     model_config = {"extra": "forbid"}
-
-
-class UserResponse(BaseModel):
-    id: str
-    username: str
-    email: EmailStr
-    role: str
-
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
 
 
 # ---------------- Blog Schemas ----------------
@@ -65,18 +78,14 @@ class BlogUpdate(BaseModel):
 
 
 class BlogResponse(BlogBase):
-    id: str
+    id: uuid.UUID
     user: UserResponse
     comments: Optional[List["CommentResponse"]] = []
     reactions: Optional[List["ReactionResponse"]] = []
 
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
 
-# ---- V2 Enhanced ----
 class ReactionSummary(BaseModel):
     code: int
     count: int
@@ -88,20 +97,17 @@ class ReactionSummary(BaseModel):
 
 
 class BlogResponseV2(BlogBase):
-    id: str
+    id: uuid.UUID
     user: UserResponse
-    created_at: Optional[str]
-    updated_at: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
     comments_count: int = 0
     reactions_summary: List[ReactionSummary] = []
     current_user_reaction: Optional[int]
     is_owner: bool = False
 
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
 
 # ---------------- Comment Schemas ----------------
@@ -116,32 +122,25 @@ class CommentCreate(CommentBase):
 
 
 class CommentResponse(CommentBase):
-    id: str
+    id: uuid.UUID
     user: UserResponse
-    blog_id: str
+    blog_id: uuid.UUID
 
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
 
 class CommentResponseV2(CommentBase):
-    id: str
+    id: uuid.UUID
     user: UserResponse
-    blog_id: str
-    created_at: Optional[str]
-    updated_at: Optional[str]
+    blog_id: uuid.UUID
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
 
-# ---- Bulk Comments Response ----
 class BulkCommentsResponse(RootModel):
-    root: Dict[str, List[CommentResponseV2]]
+    root: Dict[uuid.UUID, List[CommentResponseV2]]
 
 
 # ---------------- Reaction Schemas ----------------
@@ -159,14 +158,11 @@ class ReactionCreate(ReactionBase):
 
 
 class ReactionResponse(ReactionBase):
-    id: str
+    id: uuid.UUID
     user: UserResponse
-    blog_id: str
+    blog_id: uuid.UUID
 
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
     @computed_field
     @property
@@ -175,14 +171,11 @@ class ReactionResponse(ReactionBase):
 
 
 class ReactionResponseV2(ReactionBase):
-    id: str
+    id: uuid.UUID
     user: UserResponse
-    blog_id: str
+    blog_id: uuid.UUID
 
-    model_config = {
-        "from_attributes": True,
-        "extra": "forbid"
-    }
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
     @computed_field
     @property
@@ -190,7 +183,6 @@ class ReactionResponseV2(ReactionBase):
         return chr(self.code)
 
 
-# ---- Bulk Reactions Response ----
 class BulkReactionItem(BaseModel):
     reactions: List[ReactionResponseV2]
     summary: List[ReactionSummary]
@@ -198,7 +190,50 @@ class BulkReactionItem(BaseModel):
 
 
 class BulkReactionsResponse(RootModel):
-    root: Dict[str, BulkReactionItem]
+    root: Dict[uuid.UUID, BulkReactionItem]
+
+
+# ---------------- Friend Request Schemas ----------------
+class FriendRequestStatus(str, Enum):
+    pending = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    cancelled = "cancelled"
+
+
+class FriendRequestActionType(str, Enum):
+    accept = "accept"
+    reject = "reject"
+    cancel = "cancel"
+
+
+class FriendRequestBase(BaseModel):
+    receiver_id: uuid.UUID = Field(..., description="ID of the user to send request to")
+
+    model_config = {"extra": "forbid"}
+
+
+class FriendRequestCreate(FriendRequestBase):
+    pass
+
+
+class FriendRequestAction(BaseModel):
+    action: FriendRequestActionType = Field(
+        ..., description="Action to perform on a friend request"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class FriendRequestResponse(BaseModel):
+    id: uuid.UUID
+    sender: UserResponse
+    receiver: UserResponse
+    status: FriendRequestStatus
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True, "extra": "forbid"}
 
 
 # ---------------- Model Linking ----------------
