@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.blog_utils_v2 import (
+from app.api.routes.utils.blog_utils_v2 import (
     fetch_blog_counts,
     fetch_comments,
     fetch_reaction_data,
