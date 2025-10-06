@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app import schemas
-from app.api.routes.security_utils import (
+from app.api.routes.utils.security_utils import (
     enforce_password_policy,
     hash_password,
     verify_password,

@@ -3,7 +3,7 @@ from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.api.routes.blog_utils_v1 import (
+from app.api.routes.utils.blog_utils_v1 import (
     attach_comments_and_reactions,
     get_blog_or_404,
     validate_reaction_code,
@@ -31,7 +31,6 @@ async def create_blog(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    # ✅ Proper enum comparison
     if current_user.role not in {UserRole.writer, UserRole.admin}:
         raise HTTPException(
             status_code=403, detail="Only writers or admins can create blogs"

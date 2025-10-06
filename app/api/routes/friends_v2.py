@@ -38,7 +38,7 @@ async def get_request_by_id(request_id: str, db: AsyncSession) -> UserRequest | 
 async def get_pending_request_between(
     user1_id: str, user2_id: str, db: AsyncSession
 ) -> UserRequest | None:
-    """Check if a pending request exists between two users."""
+    """Check if a pending friend request exists between two users."""
     result = await db.execute(
         select(UserRequest)
         .where(
@@ -59,6 +59,26 @@ async def get_pending_request_between(
         .options(selectinload(UserRequest.sender), selectinload(UserRequest.receiver))
     )
     return result.scalar_one_or_none()
+
+
+async def are_friends(user1_id: str, user2_id: str, db: AsyncSession) -> bool:
+    """Check if two users are already friends."""
+    result = await db.execute(
+        select(UserRequest).where(
+            UserRequest.status == FriendRequestStatus.accepted.value,
+            or_(
+                and_(
+                    UserRequest.sender_id == user1_id,
+                    UserRequest.receiver_id == user2_id,
+                ),
+                and_(
+                    UserRequest.sender_id == user2_id,
+                    UserRequest.receiver_id == user1_id,
+                ),
+            ),
+        )
+    )
+    return result.scalar_one_or_none() is not None
 
 
 def to_friend_request_response(req: UserRequest) -> FriendRequestResponse:
@@ -93,6 +113,11 @@ async def send_friend_request(
     if not receiver:
         raise HTTPException(status_code=404, detail="User not found.")
 
+    # Check if already friends
+    if await are_friends(current_user.id, request.receiver_id, db):
+        raise HTTPException(status_code=400, detail="You are already friends.")
+
+    # Check if a pending request exists
     existing_request = await get_pending_request_between(
         current_user.id, request.receiver_id, db
     )
@@ -166,6 +191,31 @@ async def list_incoming_requests(
     return [to_friend_request_response(r) for r in requests]
 
 
+# ---------------- List Outgoing Requests ----------------
+@router.get("/outgoing", response_model=List[FriendRequestResponse])
+async def list_outgoing_requests(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, le=100),
+    status_filter: FriendRequestStatus = Query(FriendRequestStatus.pending),
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(get_current_user),
+):
+    """List all friend requests sent by the current user."""
+    result = await db.execute(
+        select(UserRequest)
+        .where(
+            UserRequest.sender_id == current_user.id,
+            UserRequest.status == status_filter.value,
+        )
+        .order_by(desc(UserRequest.created_at))
+        .offset(skip)
+        .limit(limit)
+        .options(selectinload(UserRequest.sender), selectinload(UserRequest.receiver))
+    )
+    requests = result.scalars().all()
+    return [to_friend_request_response(r) for r in requests]
+
+
 # ---------------- List Friends ----------------
 @router.get("/", response_model=List[UserResponse])
 async def list_friends(
@@ -174,33 +224,28 @@ async def list_friends(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ):
+    """List all accepted friends of the current user."""
     result = await db.execute(
-        select(UserRequest)
-        .where(
-            UserRequest.status == FriendRequestStatus.accepted.value,
+        select(User)
+        .join(
+            UserRequest,
             or_(
-                UserRequest.sender_id == current_user.id,
-                UserRequest.receiver_id == current_user.id,
+                and_(
+                    UserRequest.sender_id == User.id,
+                    UserRequest.receiver_id == current_user.id,
+                ),
+                and_(
+                    UserRequest.receiver_id == User.id,
+                    UserRequest.sender_id == current_user.id,
+                ),
             ),
         )
-        .order_by(desc(UserRequest.updated_at))
+        .where(UserRequest.status == FriendRequestStatus.accepted.value)
+        .order_by(User.username)
         .offset(skip)
         .limit(limit)
-        .options(selectinload(UserRequest.sender), selectinload(UserRequest.receiver))
     )
-    requests = result.scalars().all()
-
-    friend_ids = {
-        r.receiver_id if r.sender_id == current_user.id else r.sender_id
-        for r in requests
-    }
-    if not friend_ids:
-        return []
-
-    users_result = await db.execute(
-        select(User).where(User.id.in_(friend_ids)).order_by(User.username)
-    )
-    friends = users_result.scalars().all()
+    friends = result.scalars().all()
 
     return [
         UserResponse.model_validate(friend, from_attributes=True)
@@ -230,4 +275,35 @@ async def cancel_friend_request(
     await db.refresh(friend_request)
 
     return to_friend_request_response(friend_request)
+
+
+# ---------------- Unfriend ----------------
+@router.delete("/{friend_id}/unfriend", status_code=status.HTTP_204_NO_CONTENT)
+async def unfriend_user(
+    friend_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(get_current_user),
+):
+    """Unfriend a user by cancelling an accepted friendship."""
+    result = await db.execute(
+        select(UserRequest).where(
+            UserRequest.status == FriendRequestStatus.accepted.value,
+            or_(
+                and_(
+                    UserRequest.sender_id == current_user.id,
+                    UserRequest.receiver_id == friend_id,
+                ),
+                and_(
+                    UserRequest.receiver_id == current_user.id,
+                    UserRequest.sender_id == friend_id,
+                ),
+            ),
+        )
+    )
+    friendship = result.scalar_one_or_none()
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friendship not found.")
+
+    friendship.status = FriendRequestStatus.cancelled.value
+    await db.commit()
 

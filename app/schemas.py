@@ -18,7 +18,7 @@ class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=128)
-    role: Optional[UserRole] = UserRole.writer
+    role: UserRole
 
     model_config = {"extra": "forbid"}
 
@@ -53,7 +53,6 @@ class TokenResponse(BaseModel):
 class TokenPairResponse(TokenResponse):
     refresh_token: str
     refresh_expires_utc: Optional[str] = None
-    refresh_expires_local: Optional[str] = None
 
     model_config = {"extra": "forbid"}
 
@@ -204,7 +203,6 @@ class FriendRequestStatus(str, Enum):
 class FriendRequestActionType(str, Enum):
     accept = "accept"
     reject = "reject"
-    cancel = "cancel"
 
 
 class FriendRequestBase(BaseModel):
@@ -231,7 +229,7 @@ class FriendRequestResponse(BaseModel):
     receiver: UserResponse
     status: FriendRequestStatus
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime
 
     model_config = {"from_attributes": True, "extra": "forbid"}
 
