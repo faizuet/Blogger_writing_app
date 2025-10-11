@@ -45,6 +45,11 @@ class User(Base):
     role = Column(
         Enum(UserRole, name="user_roles"), default=UserRole.writer, nullable=False
     )
+    is_verified = Column(Boolean, default=False, nullable=False)
+    verification_token = Column(String(255), nullable=True, index=True)
+    verification_token_expires = Column(DateTime(timezone=True), nullable=True)
+    reset_token = Column(String(255), nullable=True, index=True)
+    reset_token_expires = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     blogs = relationship(
@@ -70,7 +75,6 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-
 
 # -------- Blog Model --------
 class Blog(Base):
@@ -148,6 +152,7 @@ class Reaction(Base):
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -1,8 +1,8 @@
 from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.models import Blog, Comment, Reaction, User
 from app.schemas import CommentResponseV2, ReactionResponseV2, ReactionSummary
@@ -44,7 +44,8 @@ async def attach_comments_and_reactions(
     blog.comments = comments_result.scalars().all()
 
     # Reactions
-    reactions_result = await db.execute(select(Reaction).where(Reaction.blog_id == blog.id))
+    reactions_stmt = select(Reaction).where(Reaction.blog_id == blog.id)
+    reactions_result = await db.execute(reactions_stmt)
     reactions = reactions_result.scalars().all()
 
     blog.reactions = (
@@ -61,7 +62,7 @@ def validate_reaction_code(code: int) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reaction code")
 
 
-# ---------------- Bulk Helpers ----------------
+# ---------------- Bulk Comments ----------------
 async def fetch_comments(
     db: AsyncSession, blog_ids: List[str], current_user: Optional[User] = None
 ) -> Dict[str, List[CommentResponseV2]]:
@@ -80,7 +81,7 @@ async def fetch_comments(
             CommentResponseV2(
                 id=c.id,
                 content=c.content,
-                user=None,
+                user=None,  # Can populate if needed
                 blog_id=c.blog_id,
                 created_at=c.created_at.isoformat() if c.created_at else None,
                 updated_at=c.updated_at.isoformat() if c.updated_at else None,
@@ -90,16 +91,7 @@ async def fetch_comments(
     return comment_map
 
 
-from typing import Dict, List, Optional, Tuple
-
-from fastapi import HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models import Reaction, User
-from app.schemas import ReactionResponseV2, ReactionSummary
-
-
+# ---------------- Bulk Reactions ----------------
 async def fetch_reaction_data(
     db: AsyncSession, blog_ids: List[str], current_user: Optional[User] = None
 ) -> Tuple[
@@ -116,7 +108,7 @@ async def fetch_reaction_data(
         - user_reactions_map: blog_id -> current user's reaction code
     """
 
-    # --- Fetch reactions for response mapping ---
+    # --- Fetch all reactions ---
     stmt = select(Reaction).where(Reaction.blog_id.in_(blog_ids))
     if not (current_user and current_user.role == "admin"):
         stmt = stmt.where(Reaction.deleted.is_(False))
@@ -130,27 +122,24 @@ async def fetch_reaction_data(
     for r in reactions:
         reaction_map.setdefault(r.blog_id, []).append(ReactionResponseV2.from_orm(r))
 
-        # Track current user’s reaction
-        if current_user and r.user_id == current_user.id:
+        # Track current user's reaction
+        if current_user and r.user_id == current_user.id and not r.deleted:
             user_reactions_map[r.blog_id] = r.code
 
-    # --- Fetch aggregated reaction summaries ---
+    # --- Reaction summaries ---
     summary_stmt = (
-        select(Reaction.blog_id, Reaction.code, func.count().label("count"))
+        select(Reaction.blog_id, Reaction.code, func.count(Reaction.id).label("count"))
         .where(Reaction.blog_id.in_(blog_ids))
         .group_by(Reaction.blog_id, Reaction.code)
     )
-
     if not (current_user and current_user.role == "admin"):
         summary_stmt = summary_stmt.where(Reaction.deleted.is_(False))
 
     summary_result = await db.execute(summary_stmt)
-
     summary_map: Dict[str, List[ReactionSummary]] = {}
     for blog_id, code, count in summary_result.all():
         summary_map.setdefault(blog_id, []).append(ReactionSummary(code=code, count=count))
 
     return reaction_map, summary_map, user_reactions_map
-
 
 

@@ -1,4 +1,6 @@
 from datetime import datetime
+from typing import List
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, or_
@@ -10,6 +12,7 @@ from app.api.routes.utils.blog_utils_v2 import (
     fetch_reaction_data,
     get_blog_or_404,
     map_blog_response,
+    validate_reaction_code,
 )
 from app.core.database import get_async_db
 from app.core.security import get_current_user
@@ -19,6 +22,8 @@ from app.schemas import (
     BlogResponseV2,
     BlogUpdate,
     BulkReactionItem,
+    BulkCommentsResponse,
+    BulkReactionsResponse,
     CommentCreate,
     CommentResponseV2,
     ReactionCreate,
@@ -28,6 +33,7 @@ from app.schemas import (
 
 router = APIRouter(prefix="/v2/blogs", tags=["Blogs V2"])
 
+
 # ---------------- Blog CRUD ----------------
 @router.post("/", response_model=BlogResponseV2, status_code=status.HTTP_201_CREATED)
 async def create_blog(
@@ -36,9 +42,7 @@ async def create_blog(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role not in {UserRole.writer, UserRole.admin}:
-        raise HTTPException(
-            status_code=403, detail="Only writers or admins can create blogs"
-        )
+        raise HTTPException(status_code=403, detail="Only writers or admins can create blogs")
 
     new_blog = Blog(
         title=blog.title,
@@ -54,7 +58,7 @@ async def create_blog(
     return map_blog_response(new_blog, {}, {}, {}, current_user)
 
 
-@router.get("/", response_model=list[BlogResponseV2])
+@router.get("/", response_model=List[BlogResponseV2])
 async def get_blogs(
     skip: int = 0,
     limit: int = 100,
@@ -84,6 +88,7 @@ async def get_blogs(
     elif sort_by == "most_reacted":
         reactions_subq = (
             select(Reaction.blog_id, func.count(Reaction.id).label("r_count"))
+            .where(Reaction.deleted.is_(False))
             .group_by(Reaction.blog_id)
             .subquery()
         )
@@ -97,9 +102,7 @@ async def get_blogs(
         return []
 
     blog_ids = [b.id for b in blogs]
-    comments_map, reactions_map, user_reactions = await fetch_blog_counts(
-        db, blog_ids, current_user
-    )
+    comments_map, reactions_map, user_reactions = await fetch_blog_counts(db, blog_ids, current_user)
 
     return [
         map_blog_response(b, comments_map, reactions_map, user_reactions, current_user)
@@ -109,22 +112,18 @@ async def get_blogs(
 
 @router.get("/{blog_id}", response_model=BlogResponseV2)
 async def get_blog(
-    blog_id: str,
+    blog_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
     blog = await get_blog_or_404(blog_id, db, current_user)
-    comments_map, reactions_map, user_reactions = await fetch_blog_counts(
-        db, [blog_id], current_user
-    )
-    return map_blog_response(
-        blog, comments_map, reactions_map, user_reactions, current_user
-    )
+    comments_map, reactions_map, user_reactions = await fetch_blog_counts(db, [blog_id], current_user)
+    return map_blog_response(blog, comments_map, reactions_map, user_reactions, current_user)
 
 
 @router.put("/{blog_id}", response_model=BlogResponseV2)
 async def update_blog(
-    blog_id: str,
+    blog_id: UUID,
     blog_data: BlogUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
@@ -143,17 +142,13 @@ async def update_blog(
     await db.commit()
     await db.refresh(blog)
 
-    comments_map, reactions_map, user_reactions = await fetch_blog_counts(
-        db, [blog_id], current_user
-    )
-    return map_blog_response(
-        blog, comments_map, reactions_map, user_reactions, current_user
-    )
+    comments_map, reactions_map, user_reactions = await fetch_blog_counts(db, [blog_id], current_user)
+    return map_blog_response(blog, comments_map, reactions_map, user_reactions, current_user)
 
 
 @router.delete("/{blog_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_blog(
-    blog_id: str,
+    blog_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -168,18 +163,15 @@ async def delete_blog(
 
 
 # ---------------- Comment CRUD ----------------
-@router.post(
-    "/{blog_id}/comments",
-    response_model=CommentResponseV2,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/{blog_id}/comments", response_model=CommentResponseV2, status_code=status.HTTP_201_CREATED)
 async def add_comment(
-    blog_id: str,
+    blog_id: UUID,
     comment: CommentCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
     blog = await get_blog_or_404(blog_id, db, current_user)
+
     new_comment = Comment(
         content=comment.content,
         blog_id=blog.id,
@@ -197,17 +189,15 @@ async def add_comment(
         content=new_comment.content,
         user=UserResponse.from_orm(current_user),
         blog_id=blog.id,
-        created_at=new_comment.created_at.isoformat(),
-        updated_at=new_comment.updated_at.isoformat(),
+        created_at=new_comment.created_at,
+        updated_at=new_comment.updated_at,
     )
 
 
-@router.delete(
-    "/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_comment(
-    blog_id: str,
-    comment_id: str,
+    blog_id: UUID,
+    comment_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -227,25 +217,22 @@ async def delete_comment(
 
 
 # ---------------- Reaction CRUD ----------------
-@router.post(
-    "/{blog_id}/reactions",
-    response_model=ReactionResponseV2,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/{blog_id}/reactions", response_model=ReactionResponseV2, status_code=status.HTTP_201_CREATED)
 async def add_or_update_reaction(
-    blog_id: str,
+    blog_id: UUID,
     reaction: ReactionCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
     blog = await get_blog_or_404(blog_id, db, current_user)
 
-    if reaction.code not in {128077, 10084, 128514, 128562, 128546, 128545}:
-        raise HTTPException(status_code=400, detail="Invalid reaction code")
+    validate_reaction_code(reaction.code)
 
     result = await db.execute(
         select(Reaction).where(
-            Reaction.blog_id == blog_id, Reaction.user_id == current_user.id
+            Reaction.blog_id == blog_id,
+            Reaction.user_id == current_user.id,
+            Reaction.deleted.is_(False),
         )
     )
     existing_reaction = result.scalar_one_or_none()
@@ -261,6 +248,7 @@ async def add_or_update_reaction(
         code=reaction.code,
         blog_id=blog.id,
         user_id=current_user.id,
+        deleted=False,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -272,53 +260,55 @@ async def add_or_update_reaction(
 
 @router.delete("/{blog_id}/reactions", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_reaction(
-    blog_id: str,
-    user_id: str | None = None,
+    blog_id: UUID,
+    user_id: UUID | None = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
     await get_blog_or_404(blog_id, db, current_user)
 
-    query = select(Reaction).where(Reaction.blog_id == blog_id)
+    query = select(Reaction).where(Reaction.blog_id == blog_id, Reaction.deleted.is_(False))
+
     if user_id:
         if current_user.role != UserRole.admin:
-            raise HTTPException(
-                status_code=403, detail="Only admin can delete other user reactions"
-            )
+            raise HTTPException(status_code=403, detail="Only admin can delete other user reactions")
         query = query.where(Reaction.user_id == user_id)
     else:
         query = query.where(Reaction.user_id == current_user.id)
 
     result = await db.execute(query)
-    reaction = result.scalar_one_or_none()
-    if not reaction:
-        raise HTTPException(status_code=404, detail="Reaction not found")
+    reactions = result.scalars().all()
 
-    await db.delete(reaction)
+    if not reactions:
+        raise HTTPException(status_code=404, detail="Reaction(s) not found")
+
+    now = datetime.utcnow()
+    for r in reactions:
+        r.deleted = True
+        r.updated_at = now
+
     await db.commit()
 
 
 # ---------------- Bulk Endpoints ----------------
-@router.get("/bulk-comments", response_model=dict[str, list[CommentResponseV2]])
+@router.get("/bulk-comments", response_model=BulkCommentsResponse)
 async def get_bulk_comments(
-    blog_ids: list[str] = Query(...),
+    blog_ids: List[UUID] = Query(...),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await fetch_comments(db, blog_ids)
+    data = await fetch_comments(db, blog_ids)
+    return BulkCommentsResponse.model_validate({"root": data})
 
 
-@router.get("/bulk-reactions", response_model=dict[str, BulkReactionItem])
+@router.get("/bulk-reactions", response_model=BulkReactionsResponse)
 async def get_bulk_reactions(
-    blog_ids: list[str] = Query(...),
+    blog_ids: List[UUID] = Query(...),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    reaction_map, summary_map, user_reactions = await fetch_reaction_data(
-        db, blog_ids, current_user
-    )
-
-    return {
+    reaction_map, summary_map, user_reactions = await fetch_reaction_data(db, blog_ids, current_user)
+    data = {
         bid: BulkReactionItem(
             reactions=reaction_map.get(bid, []),
             summary=summary_map.get(bid, []),
@@ -326,4 +316,5 @@ async def get_bulk_reactions(
         )
         for bid in blog_ids
     }
+    return BulkReactionsResponse.model_validate({"root": data})
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from datetime import datetime
 
 from app.api.routes.utils.blog_utils_v1 import (
     attach_comments_and_reactions,
@@ -100,6 +101,8 @@ async def update_blog(
     if blog_data.content is not None:
         blog.content = blog_data.content
 
+    blog.updated_at = datetime.utcnow()  # <-- updated_at fix
+
     await db.commit()
     await db.refresh(blog)
     return await attach_comments_and_reactions(db, blog, current_user=current_user)
@@ -118,6 +121,7 @@ async def delete_blog(
     blog.deleted = True
     await db.commit()
 
+
 # ---------------- Comment Routes ----------------
 @router.post(
     "/{blog_id}/comments",
@@ -132,7 +136,12 @@ async def add_comment(
 ):
     blog = await get_blog_or_404(db, blog_id, current_user=current_user)
     new_comment = Comment(
-        content=comment.content, blog_id=blog.id, user_id=current_user.id
+        content=comment.content,
+        blog_id=blog.id,
+        user_id=current_user.id,
+        deleted=False,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
     )
     db.add(new_comment)
     await db.commit()
@@ -147,13 +156,19 @@ async def get_comments(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Comment).where(Comment.blog_id == blog_id, Comment.deleted.is_(False))
+        select(Comment)
+        .where(
+            Comment.blog_id == blog_id,
+            Comment.deleted.is_(False),
+        )
+        .order_by(Comment.created_at.desc())
     )
     return result.scalars().all()
 
 
 @router.delete(
-    "/{blog_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT
+    "/{blog_id}/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_comment(
     blog_id: str,
@@ -167,10 +182,12 @@ async def delete_comment(
     comment = result.scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
+
     if current_user.role != UserRole.admin and comment.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     comment.deleted = True
+    comment.updated_at = datetime.utcnow()
     await db.commit()
 
 
@@ -191,19 +208,27 @@ async def add_or_update_reaction(
 
     result = await db.execute(
         select(Reaction).where(
-            Reaction.blog_id == blog_id, Reaction.user_id == current_user.id
+            Reaction.blog_id == blog_id,
+            Reaction.user_id == current_user.id,
         )
     )
     existing_reaction = result.scalar_one_or_none()
 
     if existing_reaction:
         existing_reaction.code = reaction.code
+        existing_reaction.deleted = False
+        existing_reaction.updated_at = datetime.utcnow()
         await db.commit()
         await db.refresh(existing_reaction)
         return existing_reaction
 
     new_reaction = Reaction(
-        code=reaction.code, blog_id=blog.id, user_id=current_user.id
+        code=reaction.code,
+        blog_id=blog.id,
+        user_id=current_user.id,
+        deleted=False,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
     )
     db.add(new_reaction)
     await db.commit()
@@ -217,7 +242,11 @@ async def get_reactions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Reaction).where(Reaction.blog_id == blog_id))
+    stmt = select(Reaction).where(Reaction.blog_id == blog_id)
+    if not (current_user and current_user.role == UserRole.admin):
+        stmt = stmt.where(Reaction.deleted == False)
+
+    result = await db.execute(stmt.order_by(Reaction.created_at.desc()))
     return result.scalars().all()
 
 
@@ -228,16 +257,19 @@ async def remove_reaction(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(Reaction).where(Reaction.blog_id == blog_id)
+    stmt = select(Reaction).where(Reaction.blog_id == blog_id)
     if current_user.role == UserRole.admin and user_id:
-        query = query.where(Reaction.user_id == user_id)
+        stmt = stmt.where(Reaction.user_id == user_id)
     else:
-        query = query.where(Reaction.user_id == current_user.id)
+        stmt = stmt.where(Reaction.user_id == current_user.id)
 
-    result = await db.execute(query)
+    result = await db.execute(stmt)
     reaction = result.scalar_one_or_none()
+
     if not reaction:
         raise HTTPException(status_code=404, detail="Reaction not found")
-    await db.delete(reaction)
+
+    reaction.deleted = True
+    reaction.updated_at = datetime.utcnow()
     await db.commit()
 

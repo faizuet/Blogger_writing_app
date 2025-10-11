@@ -24,9 +24,7 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    username: str = Field(
-        ..., min_length=3, max_length=50, description="Username only for login"
-    )
+    username: str = Field(..., min_length=3, max_length=50, description="Username for login")
     password: str
 
     model_config = {"extra": "forbid"}
@@ -37,8 +35,14 @@ class UserResponse(BaseModel):
     username: str
     email: EmailStr
     role: UserRole
+    is_verified: bool
 
     model_config = {"from_attributes": True, "extra": "forbid"}
+
+
+# ---------------- Verification Schemas ----------------
+class EmailVerificationResponse(BaseModel):
+    message: str
 
 
 # ---------------- Token Schemas ----------------
@@ -55,7 +59,6 @@ class TokenPairResponse(TokenResponse):
     refresh_expires_utc: Optional[str] = None
 
     model_config = {"extra": "forbid"}
-
 
 # ---------------- Blog Schemas ----------------
 class BlogBase(BaseModel):
@@ -78,9 +81,9 @@ class BlogUpdate(BaseModel):
 
 class BlogResponse(BlogBase):
     id: uuid.UUID
-    user: UserResponse
-    comments: Optional[List["CommentResponse"]] = []
-    reactions: Optional[List["ReactionResponse"]] = []
+    user: "UserResponse"
+    comments: List["CommentResponse"] = Field(default_factory=list)
+    reactions: List["ReactionResponse"] = Field(default_factory=list)
 
     model_config = {"from_attributes": True, "extra": "forbid"}
 
@@ -97,12 +100,11 @@ class ReactionSummary(BaseModel):
 
 class BlogResponseV2(BlogBase):
     id: uuid.UUID
-    user: UserResponse
+    user: "UserResponse"
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
-
     comments_count: int = 0
-    reactions_summary: List[ReactionSummary] = []
+    reactions_summary: List[ReactionSummary] = Field(default_factory=list)
     current_user_reaction: Optional[int]
     is_owner: bool = False
 
@@ -122,7 +124,7 @@ class CommentCreate(CommentBase):
 
 class CommentResponse(CommentBase):
     id: uuid.UUID
-    user: UserResponse
+    user: "UserResponse"
     blog_id: uuid.UUID
 
     model_config = {"from_attributes": True, "extra": "forbid"}
@@ -130,7 +132,7 @@ class CommentResponse(CommentBase):
 
 class CommentResponseV2(CommentBase):
     id: uuid.UUID
-    user: UserResponse
+    user: "UserResponse"
     blog_id: uuid.UUID
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
@@ -138,6 +140,7 @@ class CommentResponseV2(CommentBase):
     model_config = {"from_attributes": True, "extra": "forbid"}
 
 
+# ---------------- Bulk Comments ----------------
 class BulkCommentsResponse(RootModel):
     root: Dict[uuid.UUID, List[CommentResponseV2]]
 
@@ -158,7 +161,7 @@ class ReactionCreate(ReactionBase):
 
 class ReactionResponse(ReactionBase):
     id: uuid.UUID
-    user: UserResponse
+    user: "UserResponse"
     blog_id: uuid.UUID
 
     model_config = {"from_attributes": True, "extra": "forbid"}
@@ -171,7 +174,7 @@ class ReactionResponse(ReactionBase):
 
 class ReactionResponseV2(ReactionBase):
     id: uuid.UUID
-    user: UserResponse
+    user: "UserResponse"
     blog_id: uuid.UUID
 
     model_config = {"from_attributes": True, "extra": "forbid"}
@@ -183,11 +186,12 @@ class ReactionResponseV2(ReactionBase):
 
 
 class BulkReactionItem(BaseModel):
-    reactions: List[ReactionResponseV2]
-    summary: List[ReactionSummary]
+    reactions: List[ReactionResponseV2] = Field(default_factory=list)
+    summary: List[ReactionSummary] = Field(default_factory=list)
     current_user_reaction: Optional[int]
 
 
+# ---------------- Bulk Reactions ----------------
 class BulkReactionsResponse(RootModel):
     root: Dict[uuid.UUID, BulkReactionItem]
 
@@ -216,17 +220,15 @@ class FriendRequestCreate(FriendRequestBase):
 
 
 class FriendRequestAction(BaseModel):
-    action: FriendRequestActionType = Field(
-        ..., description="Action to perform on a friend request"
-    )
+    action: FriendRequestActionType = Field(..., description="Action to perform on a friend request")
 
     model_config = {"extra": "forbid"}
 
 
 class FriendRequestResponse(BaseModel):
     id: uuid.UUID
-    sender: UserResponse
-    receiver: UserResponse
+    sender: "UserResponse"
+    receiver: "UserResponse"
     status: FriendRequestStatus
     created_at: datetime
     updated_at: datetime
